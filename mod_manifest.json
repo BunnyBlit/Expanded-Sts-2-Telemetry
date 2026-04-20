@@ -1,0 +1,11 @@
+{
+  "id": "expanded-telemetry",
+  "pck_name": "expanded-telemetry",
+  "name": "Expanded Telemetry",
+  "author": "Blit",
+  "description": "Records played cards, enemy actions, and floor-level run data for analysis.",
+  "version": "1.0.1",
+  "has_pck": false,
+  "has_dll": true,
+  "affects_gameplay": false
+}
