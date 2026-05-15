@@ -12,8 +12,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./fetch-log.sh
 ```
 
-The `.csproj` has a `CopyToModsFolderOnBuild` MSBuild target that automatically copies the compiled DLL and supporting files to:
-`SlayTheSpire2.app/Contents/MacOS/mods/expanded-telemetry/`
+Requires the `STS2_DIR` environment variable pointing to the folder containing `sts2.dll`. Set it once in your shell profile — the `.csproj` reads it directly via MSBuild's env var support and errors with a clear message if unset.
+
+The `.csproj` has a `CopyToModsFolderOnBuild` MSBuild target that automatically copies the compiled DLL and supporting files to the game's `mods/expanded-telemetry/` folder (derived from `STS2_DIR`).
 
 Hot-reload is available via MCP: use `watch_project` with `sts2-mcp-watch.json` config (1.5s debounce, auto-reload on file save).
 
@@ -54,8 +55,8 @@ Hot-reload is available via MCP: use `watch_project` with `sts2-mcp-watch.json` 
 
 ### Output Files
 
-- **In-progress**: `in_progress.encounter_cards` (AutoFlush=true, crash-safe)
-- **Finalized**: `{StartTime}.encounter_cards` (renamed on run end)
+- **In-progress**: `in_progress.expanded_run` (AutoFlush=true, crash-safe)
+- **Finalized**: `{StartTime}.expanded_run` (renamed on run end)
 - **Location**: `~/Library/Application Support/SlayTheSpire2/steam/{UserID}/modded/profile{N}/saves/history/`
 
 ### Event Types (NDJSON)
@@ -161,4 +162,4 @@ Key invariants:
 
 ## Sample Telemetry Files
 
-`logs/1776012547.encounter_cards` — Defect run (win, 23 combats). Contains both `from_flush: true` and `from_flush: false` discard events; the false events occur during TEST_SUBJECT_BOSS which forces a full hand discard at combat start.
+`logs/1776012547.expanded_run` — Defect run (win, 23 combats). Contains both `from_flush: true` and `from_flush: false` discard events; the false events occur during TEST_SUBJECT_BOSS which forces a full hand discard at combat start.

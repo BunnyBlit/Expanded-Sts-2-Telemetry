@@ -20,11 +20,11 @@ internal sealed record RewardSummary(string reward_type, string? item);
 internal sealed record ShopItemSummary(string item_type, string? item, int cost);
 
 // Streams telemetry events to disk as NDJSON (one JSON object per line) while a run
-// is in progress. The file is written to `in_progress.encounter_cards` and renamed to
-// `{StartTime}.encounter_cards` when the run ends, matching the game's .run file naming.
+// is in progress. The file is written to `in_progress.expanded_run` and renamed to
+// `{StartTime}.expanded_run` when the run ends, matching the game's .run file naming.
 internal static class TelemetryStreamWriter
 {
-    private const string TempFileName = "in_progress.encounter_cards";
+    private const string TempFileName = "in_progress.expanded_run";
 
     private static StreamWriter? _writer;
     private static string? _tempFilePath;
@@ -164,7 +164,7 @@ internal static class TelemetryStreamWriter
 
             if (_tempFilePath != null && File.Exists(_tempFilePath))
             {
-                string finalPath = GetHistoryFilePath($"{startTime}.encounter_cards");
+                string finalPath = GetHistoryFilePath($"{startTime}.expanded_run");
                 File.Move(_tempFilePath, finalPath, overwrite: true);
                 Log.Info($"[expanded-telemetry] Finalized telemetry to {finalPath}");
                 _tempFilePath = null;

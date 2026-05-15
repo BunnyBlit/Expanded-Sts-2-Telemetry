@@ -9,13 +9,19 @@
     <Nullable>enable</Nullable>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppOutputBase>$(MSBuildProjectDirectory)\</AppOutputBase>
-    <Sts2Dir>/Users/johnathan/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64</Sts2Dir>
+    <!-- Set STS2_DIR env var to the folder containing sts2.dll (see README). MSBuild reads it directly as $(STS2_DIR). -->
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">$(STS2_DIR)</Sts2Dir>
     <!-- ModManager uses Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()), "mods"). Windows/Linux: next to game exe; macOS .app: Contents/MacOS/mods (NOT beside the .app bundle). -->
     <ModsPath Condition="'$(ModsPath)' == '' and '$(Sts2Dir)' != '' and $([MSBuild]::IsOSPlatform('OSX'))">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(Sts2Dir)', '..', '..', 'MacOS', 'mods'))))</ModsPath>
     <ModsPath Condition="'$(ModsPath)' == '' and '$(Sts2Dir)' != '' and !$([MSBuild]::IsOSPlatform('OSX'))">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(Sts2Dir)', '..', 'mods'))))</ModsPath>
     <!-- Default off; Debug enables deploy to mods/ for MCP hot_reload_project / watch_project -->
     <EnableCopyToModsFolderOnBuild Condition="'$(EnableCopyToModsFolderOnBuild)' == ''">false</EnableCopyToModsFolderOnBuild>
   </PropertyGroup>
+
+  <Target Name="CheckSts2Dir" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(Sts2Dir)' == ''"
+           Text="STS2_DIR environment variable is not set. Export STS2_DIR pointing to the folder containing sts2.dll. See README for setup." />
+  </Target>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <Optimize>false</Optimize>

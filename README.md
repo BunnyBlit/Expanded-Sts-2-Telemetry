@@ -13,10 +13,10 @@ Output sits alongside the game's own `.run` files:
 ```
 ~/Library/Application Support/SlayTheSpire2/steam/{UserID}/modded/profile{N}/saves/history/
   1776012547.run               ← game's file
-  1776012547.encounter_cards   ← this mod's file
+  1776012547.expanded_run   ← this mod's file
 ```
 
-While a run is in progress the file is named `in_progress.encounter_cards` and written with `AutoFlush=true` (crash-safe, readable mid-run). It is renamed to `{StartTime}.encounter_cards` when the run ends.
+While a run is in progress the file is named `in_progress.expanded_run` and written with `AutoFlush=true` (crash-safe, readable mid-run). It is renamed to `{StartTime}.expanded_run` when the run ends.
 
 ## Output format
 
@@ -94,12 +94,25 @@ One JSON object per line (NDJSON). Example sequence from a single combat:
 
 ## Build & deploy
 
+Requires .NET 9 SDK. Set the `STS2_DIR` environment variable to the folder containing `sts2.dll` — add this to your shell profile (`.zprofile`, `.zshrc`, etc.) so it persists:
+
+```bash
+# macOS
+export STS2_DIR="/Users/YOU/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64"
+
+# Windows
+$env:STS2_DIR = "C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2\SlayTheSpire2_Data\Managed"
+
+# Linux
+export STS2_DIR="$HOME/.steam/steam/steamapps/common/Slay the Spire 2/SlayTheSpire2_Data/Managed"
+```
+
+Then build:
+
 ```bash
 ./deploy.sh       # dotnet build -c Debug + auto-copies DLL to game mods folder
 ./fetch-log.sh    # copies the game log to logs/godot.log for inspection
 ```
-
-Requires .NET 9 SDK. The mod targets `SlayTheSpire2.app/Contents/MacOS/mods/expanded-telemetry/`.
 
 ## Tools built
 
@@ -116,7 +129,8 @@ Requires .NET 9 SDK. The mod targets `SlayTheSpire2.app/Contents/MacOS/mods/expa
 - [x] **Player and monster state on `turn_start`**: Player HP/block/energy/powers and monster HP/block/powers/intents snapshotted at the start of each player turn. Combined with the existing delta events (`damage_dealt`, `block_gained`, `power_applied`) this gives full mid-turn reconstruction without the redundancy of a `turn_end` snapshot.
 - [x] **Monster action events**: `monster_action` events record what each monster does on its turn — monster ID, move name, intent types, and targets. Fires between `turn_end N` and `turn_start N+1`.
 - [x] **Relic trigger events**: `relic_trigger` events fire whenever a relic flashes during combat — relic ID, owner player, and the creatures targeted by the flash.
-- [x] **Non-combat room telemetry**: `room_entered` (every floor), `event_choice`, `rest_site_choice`, `shop_purchase`, `rewards_offered`, `reward_taken` — full run transcript matching the game's own `.run` log coverage. Verified on Regent run (Act 1, 8 floors).
-- [ ] **Configurable file names**: (temp name and final extension) via mod config
+- [x] **Non-combat room telemetry**: `room_entered` (every floor), `event_choice`, `rest_site_choice`, `shop_purchase`, `shop_offered`, `rewards_offered`, `reward_taken` — full run transcript matching the game's own `.run` log coverage.
+- [x] **Sensible output file extension**: files are now named `*.expanded_run` (previously `*.encounter_cards`).
+- [x] **No hardcoded install paths**: build tooling reads `STS2_DIR` from the environment; in-mod paths use game APIs exclusively.
+- [ ] **Configurable file suffix**: via mod config (deferred — BaseLib `SimpleModConfig` supports enum dropdowns, not free-text)
 - [ ] **Stream to a telemetry ingest server**: to, ya know, do something with the data
-- [ ] **Remove hardcoded paths**: there are some hardcoded paths that we should derive from env vars (like the sts2 data and application directories). Probably should set up an init or install script to do that thing.
