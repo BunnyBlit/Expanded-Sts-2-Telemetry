@@ -1,0 +1,7 @@
+.claude/
+.code/
+.vscode/
+obj/
+logs/
+bin/
+

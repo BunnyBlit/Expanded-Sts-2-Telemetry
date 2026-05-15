@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Players;
 
 namespace ExpandedTelemetry;
 
@@ -30,7 +32,7 @@ internal static class EncounterCardTracker
         if (!_encounterIds.TryGetValue(combatState, out string? encounterId)) return;
         if (!_turnCounters.TryGetValue(combatState, out TurnCounter? counter)) return;
         counter.Value++;
-        TelemetryStreamWriter.WriteTurnStart(encounterId, counter.Value);
+        TelemetryStreamWriter.WriteTurnStart(encounterId, counter.Value, combatState.Players, combatState.Enemies);
     }
 
     public static void OnTurnEnd(CombatState combatState)
@@ -43,34 +45,76 @@ internal static class EncounterCardTracker
     private static int GetTurn(CombatState combatState)
         => _turnCounters.TryGetValue(combatState, out TurnCounter? counter) ? counter.Value : 0;
 
-    public static void OnCardPlayed(CombatState combatState, ulong playerId, string cardId, string? targetId, int upgradeLevel, bool isAutoPlay)
+    public static void OnCardPlayed(CombatState combatState, ulong playerId, string characterId, string cardId, string? targetId, int upgradeLevel, bool isAutoPlay)
     {
         if (_encounterIds.TryGetValue(combatState, out string? encounterId))
-            TelemetryStreamWriter.WriteCardPlay(encounterId, playerId, cardId, targetId, GetTurn(combatState), upgradeLevel, isAutoPlay);
+            TelemetryStreamWriter.WriteCardPlay(encounterId, playerId, characterId, cardId, targetId, GetTurn(combatState), upgradeLevel, isAutoPlay);
     }
 
-    public static void OnCardDrawn(CombatState combatState, ulong playerId, string cardId, bool fromHandDraw, int upgradeLevel)
+    public static void OnCardDrawn(CombatState combatState, ulong playerId, string characterId, string cardId, bool fromHandDraw, int upgradeLevel)
     {
         if (_encounterIds.TryGetValue(combatState, out string? encounterId))
-            TelemetryStreamWriter.WriteCardDraw(encounterId, playerId, cardId, fromHandDraw, GetTurn(combatState), upgradeLevel);
+            TelemetryStreamWriter.WriteCardDraw(encounterId, playerId, characterId, cardId, fromHandDraw, GetTurn(combatState), upgradeLevel);
     }
 
-    public static void OnCardDiscarded(CombatState combatState, ulong playerId, string cardId, bool fromFlush, int upgradeLevel)
+    public static void OnCardDiscarded(CombatState combatState, ulong playerId, string characterId, string cardId, bool fromFlush, int upgradeLevel)
     {
         if (_encounterIds.TryGetValue(combatState, out string? encounterId))
-            TelemetryStreamWriter.WriteCardDiscard(encounterId, playerId, cardId, fromFlush, GetTurn(combatState), upgradeLevel);
+            TelemetryStreamWriter.WriteCardDiscard(encounterId, playerId, characterId, cardId, fromFlush, GetTurn(combatState), upgradeLevel);
     }
 
-    public static void OnPotionUsed(CombatState combatState, ulong playerId, string potionId, string? targetId)
+    public static void OnPotionUsed(CombatState combatState, ulong playerId, string characterId, string potionId, string? targetId)
     {
         if (_encounterIds.TryGetValue(combatState, out string? encounterId))
-            TelemetryStreamWriter.WritePotionUse(encounterId, playerId, potionId, targetId, GetTurn(combatState));
+            TelemetryStreamWriter.WritePotionUse(encounterId, playerId, characterId, potionId, targetId, GetTurn(combatState));
     }
 
-    public static void OnCardExhausted(CombatState combatState, ulong playerId, string cardId, bool fromEthereal, int upgradeLevel)
+    public static void OnCardExhausted(CombatState combatState, ulong playerId, string characterId, string cardId, bool fromEthereal, int upgradeLevel)
     {
         if (_encounterIds.TryGetValue(combatState, out string? encounterId))
-            TelemetryStreamWriter.WriteCardExhaust(encounterId, playerId, cardId, fromEthereal, GetTurn(combatState), upgradeLevel);
+            TelemetryStreamWriter.WriteCardExhaust(encounterId, playerId, characterId, cardId, fromEthereal, GetTurn(combatState), upgradeLevel);
+    }
+
+    public static void OnPowerAmountChanged(CombatState combatState, string powerId, string targetId, string? applierId, int amount)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WritePowerApplied(encounterId, powerId, targetId, applierId, amount, GetTurn(combatState));
+    }
+
+    public static void OnDamageReceived(CombatState combatState, string targetId, string? dealerId, int hpLost, int blocked, int overkill)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WriteDamageDealt(encounterId, targetId, dealerId, hpLost, blocked, overkill, GetTurn(combatState));
+    }
+
+    public static void OnBlockGained(CombatState combatState, string targetId, int amount)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WriteBlockGained(encounterId, targetId, amount, GetTurn(combatState));
+    }
+
+    public static void OnOrbChanneled(CombatState combatState, ulong playerId, string characterId, string orbId)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WriteOrbChanneled(encounterId, playerId, characterId, orbId, GetTurn(combatState));
+    }
+
+    public static void OnStarsGained(CombatState combatState, ulong playerId, string characterId, int amount)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WriteStarsGained(encounterId, playerId, characterId, amount, GetTurn(combatState));
+    }
+
+    public static void OnMonsterAction(CombatState combatState, string monsterId, string moveId, List<string> intents, List<string> targets)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WriteMonsterAction(encounterId, monsterId, moveId, intents, targets, GetTurn(combatState));
+    }
+
+    public static void OnRelicTriggered(CombatState combatState, string relicId, ulong playerId, List<string> targets)
+    {
+        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
+            TelemetryStreamWriter.WriteRelicTriggered(encounterId, relicId, playerId, targets, GetTurn(combatState));
     }
 
     public static void OnCombatEnd(CombatState combatState, string outcome)

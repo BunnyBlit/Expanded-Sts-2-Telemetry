@@ -1,8 +1,13 @@
+using System.Collections.Generic;
+using System.Linq;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Combat.History;
+using MegaCrit.Sts2.Core.MonsterMoves.Intents;
+using MegaCrit.Sts2.Core.MonsterMoves.MonsterMoveStateMachine;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
@@ -33,7 +38,7 @@ public static class CardPlayStartedPatch
     {
         Log.Info($"[expanded-telemetry] After card play {cardPlay.Card.Id}");
         if (cardPlay.Card.Owner != null)
-            EncounterCardTracker.OnCardPlayed(combatState, cardPlay.Card.Owner.NetId, cardPlay.Card.Id.Entry, cardPlay.Target?.ModelId.Entry, cardPlay.Card.CurrentUpgradeLevel, cardPlay.IsAutoPlay);
+            EncounterCardTracker.OnCardPlayed(combatState, cardPlay.Card.Owner.NetId, cardPlay.Card.Owner.Character.Id.Entry, cardPlay.Card.Id.Entry, cardPlay.Target?.ModelId.Entry, cardPlay.Card.CurrentUpgradeLevel, cardPlay.IsAutoPlay);
     }
 }
 
@@ -52,7 +57,7 @@ public static class CardChangedPilesPatch
         if (card.Owner == null) return;
         bool fromFlush = CombatManager.Instance.EndingPlayerTurnPhaseTwo;
         Log.Info($"[expanded-telemetry] Card discarded (hand→discard, fromFlush={fromFlush}): {card.Id}");
-        EncounterCardTracker.OnCardDiscarded(combatState, card.Owner.NetId, card.Id.Entry, fromFlush, card.CurrentUpgradeLevel);
+        EncounterCardTracker.OnCardDiscarded(combatState, card.Owner.NetId, card.Owner.Character.Id.Entry, card.Id.Entry, fromFlush, card.CurrentUpgradeLevel);
     }
 }
 
@@ -63,7 +68,7 @@ public static class CardDrawnPatch
     {
         Log.Info($"[expanded-telemetry] After card draw {card.Id}");
         if (card.Owner != null)
-            EncounterCardTracker.OnCardDrawn(combatState, card.Owner.NetId, card.Id.Entry, fromHandDraw, card.CurrentUpgradeLevel);
+            EncounterCardTracker.OnCardDrawn(combatState, card.Owner.NetId, card.Owner.Character.Id.Entry, card.Id.Entry, fromHandDraw, card.CurrentUpgradeLevel);
     }
 }
 
@@ -74,7 +79,7 @@ public static class CardExhaustedPatch
     {
         if (card.Owner == null) return;
         Log.Info($"[expanded-telemetry] Card exhausted (fromEthereal={causedByEthereal}): {card.Id}");
-        EncounterCardTracker.OnCardExhausted(combatState, card.Owner.NetId, card.Id.Entry, causedByEthereal, card.CurrentUpgradeLevel);
+        EncounterCardTracker.OnCardExhausted(combatState, card.Owner.NetId, card.Owner.Character.Id.Entry, card.Id.Entry, causedByEthereal, card.CurrentUpgradeLevel);
     }
 }
 
@@ -86,7 +91,7 @@ public static class PotionUsedPatch
         if (combatState == null) return;
         if (potion.Owner == null) return;
         Log.Info($"[expanded-telemetry] Potion used: {potion.Id}");
-        EncounterCardTracker.OnPotionUsed(combatState, potion.Owner.NetId, potion.Id.Entry, target?.ModelId.Entry);
+        EncounterCardTracker.OnPotionUsed(combatState, potion.Owner.NetId, potion.Owner.Character.Id.Entry, potion.Id.Entry, target?.ModelId.Entry);
     }
 }
 
@@ -160,5 +165,81 @@ public static class CreateRunHistoryEntryPatch
             ascension: run.Ascension,
             numPlayers: run.Players.Count
         );
+    }
+}
+
+[HarmonyPatch(typeof(Hook), nameof(Hook.AfterPowerAmountChanged))]
+public static class AfterPowerAmountChangedPatch
+{
+    public static void Postfix(CombatState combatState, PowerModel power, decimal amount, Creature? applier)
+    {
+        Log.Info($"[expanded-telemetry] Power amount changed: {power.Id.Entry} on {power.Owner.ModelId.Entry} by {(int)amount}");
+        EncounterCardTracker.OnPowerAmountChanged(combatState, power.Id.Entry, power.Owner.ModelId.Entry, applier?.ModelId.Entry, (int)amount);
+    }
+}
+
+[HarmonyPatch(typeof(Hook), nameof(Hook.AfterDamageReceived))]
+public static class AfterDamageReceivedPatch
+{
+    public static void Postfix(CombatState? combatState, Creature target, DamageResult result, Creature? dealer)
+    {
+        if (combatState == null) return;
+        EncounterCardTracker.OnDamageReceived(combatState, target.ModelId.Entry, dealer?.ModelId.Entry, result.UnblockedDamage, result.BlockedDamage, result.OverkillDamage);
+    }
+}
+
+[HarmonyPatch(typeof(Hook), nameof(Hook.AfterBlockGained))]
+public static class AfterBlockGainedPatch
+{
+    public static void Postfix(CombatState combatState, Creature creature, decimal amount)
+    {
+        EncounterCardTracker.OnBlockGained(combatState, creature.ModelId.Entry, (int)amount);
+    }
+}
+
+[HarmonyPatch(typeof(Hook), nameof(Hook.AfterOrbChanneled))]
+public static class AfterOrbChanneledPatch
+{
+    public static void Postfix(CombatState combatState, Player player, OrbModel orb)
+    {
+        EncounterCardTracker.OnOrbChanneled(combatState, player.NetId, player.Character.Id.Entry, orb.Id.Entry);
+    }
+}
+
+[HarmonyPatch(typeof(Hook), nameof(Hook.AfterStarsGained))]
+public static class AfterStarsGainedPatch
+{
+    public static void Postfix(CombatState combatState, int amount, Player gainer)
+    {
+        EncounterCardTracker.OnStarsGained(combatState, gainer.NetId, gainer.Character.Id.Entry, amount);
+    }
+}
+
+// RelicModel.Flash(IEnumerable<Creature>) is the single method all relic activations route
+// through. The no-arg Flash() delegates to it. Guarded to combat-only via DebugOnlyGetState.
+[HarmonyPatch(typeof(RelicModel), nameof(RelicModel.Flash), new[] { typeof(IEnumerable<Creature>) })]
+public static class RelicFlashPatch
+{
+    public static void Postfix(RelicModel __instance, IEnumerable<Creature> targets)
+    {
+        CombatState? combatState = CombatManager.Instance.DebugOnlyGetState();
+        if (combatState == null) return;
+        var targetIds = targets.Select(t => t.ModelId.Entry).ToList();
+        Log.Info($"[expanded-telemetry] Relic triggered: {__instance.Id.Entry}");
+        EncounterCardTracker.OnRelicTriggered(combatState, __instance.Id.Entry, __instance.Owner.NetId, targetIds);
+    }
+}
+
+// CombatHistory.MonsterPerformedMove is called at the end of MonsterModel.PerformMove()
+// after the move resolves — same pattern as CombatHistory.CardPlayStarted for cards.
+[HarmonyPatch(typeof(CombatHistory), nameof(CombatHistory.MonsterPerformedMove))]
+public static class MonsterPerformedMovePatch
+{
+    public static void Postfix(CombatState combatState, MonsterModel monster, MoveState move, IEnumerable<Creature>? targets)
+    {
+        var intents = move.Intents.Select(i => i.IntentType.ToString()).ToList();
+        var targetIds = targets?.Select(t => t.ModelId.Entry).ToList() ?? [];
+        Log.Info($"[expanded-telemetry] Monster action: {monster.Id.Entry} performed {move.StateId}");
+        EncounterCardTracker.OnMonsterAction(combatState, monster.Creature.ModelId.Entry, move.StateId, intents, targetIds);
     }
 }
