@@ -26,8 +26,10 @@ Hot-reload is available via MCP: use `watch_project` with `sts2-mcp-watch.json` 
 
 | File | Purpose |
 |------|---------|
-| `ModEntry.cs` | `[ModInitializer]` entry point — initializes Harmony and calls `PatchAll()` |
-| `TelemetryStreamWriter.cs` | All file I/O — opens/writes/finalizes the NDJSON stream |
+| `ModEntry.cs` | `[ModInitializer]` entry point — loads `TelemetryConfig`, initializes Harmony, calls `PatchAll()` |
+| `TelemetryConfig.cs` | Self-contained JSON config reader; writes defaults on first run; read once at mod init |
+| `TelemetryStreamWriter.cs` | Routes events to file and/or remote; `_isOpen` flag guards idempotent `Open()`; contains `RewardSummary` + `ShopItemSummary` records |
+| `RemoteSender.cs` | Fire-and-forget background HTTP sender; `ConcurrentQueue` drained every 200ms; 2000-event bound; 3s timeout; drops on failure |
 | `EncounterCardTracker.cs` | Maps `CombatState → encounterID` via `ConditionalWeakTable`; dispatches events to the writer |
 | `Patches/CombatPatches.cs` | 18 Harmony patches that hook game events and call into `EncounterCardTracker` |
 | `Patches/OutOfCombatPatches.cs` | 7 Harmony patches for out-of-combat events — call `TelemetryStreamWriter` directly (no tracker layer needed) |
@@ -35,7 +37,7 @@ Hot-reload is available via MCP: use `watch_project` with `sts2-mcp-watch.json` 
 ### Event Flow
 
 **Out-of-combat (OutOfCombatPatches.cs):**
-- `AfterRoomEnteredPatch` → opens stream (idempotent) + writes `room_entered` for every floor/room
+- `AfterRoomEnteredPatch` → opens stream (idempotent) + writes `room_entered` for every floor/room + writes `shop_offered` inline when entering a Shop room
 - `RestSiteChoicePatch` → writes `rest_site_choice` when player picks a rest option
 - `EventChoicePatch` → writes `event_choice` when player picks an event option
 - `ShopPurchaseCapturePatch` + `ShopPurchasePatch` → capture item ID before `ClearAfterPurchase`, write `shop_purchase`
@@ -122,6 +124,11 @@ Each event includes a `timestamp` (Unix seconds UTC). The `run_start` event is w
 - **`rewards_offered` patches `Hook.BeforeRewardsOffered`**: fires with the full `IReadOnlyList<Reward>` already populated. `CardReward.Cards` and `PotionReward.Potion` are public. `RelicReward._relic` is private — accessed via a cached `FieldInfo` reflection. Gold rewards use `GoldReward.Amount` (public). Each card in a `CardReward` becomes a separate entry in the `rewards` array. Combined with `reward_taken`, consumers can reconstruct "offered but not picked" for every reward screen.
 - **`reward_taken` patches `Hook.AfterRewardTaken`**: `RelicReward.ClaimedRelic` and `PotionReward.ClaimedPotion` are set during `OnSelect()` and are accessible by the time the hook fires. `CardReward` does not expose which specific card was taken at hook time — `reward_type: "card"` is emitted without `item`; the picked card can be inferred from `rewards_offered` plus the player's updated deck. Gold rewards include `amount` instead of `item`.
 - **`monster_action` patches `CombatHistory.MonsterPerformedMove`**: called at the end of `MonsterModel.PerformMove()` after the move resolves — same pattern as `CombatHistory.CardPlayStarted`. Fires during the enemy turn (between player `turn_end` N and `turn_start` N+1), so events carry `turn: N`. `move` is `MoveState.StateId` (the move name string, e.g. `"BASH"`). `intents` are the `IntentType` strings from the move's intent list — confirms what actually happened. `targets` is the list of creature `ModelId.Entry` values (`CombatHistory.MonsterPerformedMove` passes `targets` as the player creatures; null targets become an empty list).
+- **Multi-output routing via `_isOpen` + `_writeToFile` + `_sendToServer` flags**: all three are captured once in `Open()` from `ModEntry.Config` and held for the duration of the run. `WriteEvent()` serializes the event to JSON once, then writes to the file writer (if enabled) and/or enqueues to `RemoteSender` (if enabled). Config changes mid-run are not reflected until the next run.
+- **Remote streaming is fire-and-forget**: `RemoteSender` drains a `ConcurrentQueue<string>` in a background `Task.Run` loop every 200ms, POSTing NDJSON batches to the configured URL. The queue is bounded at 2000 events; overflow is dropped with a log warning. Failed POSTs drop the batch and log. Game thread only calls `Enqueue()` (O(1), never blocks). `Finalize()` cancels the drain loop and calls `RemoteSender.Flush(3000)` — best-effort 3s final drain.
+- **`TelemetryConfig` is a self-contained JSON file** (no BaseLib or in-game UI): written to `{OS.GetUserDataDir()}/mod_configs/expanded-telemetry.cfg` on first load with defaults; loaded once in `ModEntry.Init()`. `OS.GetUserDataDir()` is safe to call at init time (Godot is up by then). If `SendToServer=true` and `ServerUrl` is empty, an error is logged and remote output is disabled for that run.
+- **`STS2_DIR` environment variable** drives all build tooling: the `.csproj` reads `$(STS2_DIR)` directly as an MSBuild property (MSBuild promotes all env vars). `Sts2Dir` is set from `$(STS2_DIR)` if unset, then used for `sts2.dll` hint path and deriving the mods deploy path. A `<Error>` target fires with a clear message if unset. No `local.props` or other indirection needed.
+- **BaseLib (`Alchyr.Sts2.BaseLib`) was removed**: attempted for in-game config UI, but the game's assembly load context doesn't probe the mod folder for transitive dependencies, causing `ReflectionTypeLoadException` on load. The `[ModuleInitializer]`-based resolver hook was also tried but abandoned. The self-contained JSON config is simpler and has no external dependency.
 
 ## Testing
 

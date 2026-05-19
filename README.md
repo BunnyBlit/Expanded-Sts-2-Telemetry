@@ -132,14 +132,21 @@ Then build:
 - [x] **Non-combat room telemetry**: `room_entered` (every floor), `event_choice`, `rest_site_choice`, `shop_purchase`, `shop_offered`, `rewards_offered`, `reward_taken` — full run transcript matching the game's own `.run` log coverage.
 - [x] **Sensible output file extension**: files are now named `*.expanded_run` (previously `*.encounter_cards`).
 - [x] **No hardcoded install paths**: build tooling reads `STS2_DIR` from the environment; in-mod paths use game APIs exclusively.
-- [ ] **Configurable file suffix**: via mod config (deferred — BaseLib `SimpleModConfig` supports enum dropdowns, not free-text)
-- [x] **Stream to a telemetry ingest server**: outputs routed to local file, remote server, or both — configured in the mod settings screen
+- [ ] **Configurable file suffix**: deferred — no clean in-game UI path without a working mod config library
+- [x] **Stream to a telemetry ingest server**: outputs routed to local file, remote server, or both via config file
 
-### Configuring remote streaming
+### Configuring outputs
 
-The mod writes a config file at `OS.GetUserDataDir()/mod_configs/expanded-telemetry.cfg`. To enable remote streaming:
+The mod auto-creates a config file on first load:
 
-1. Open the in-game mod settings and tick **SendToServer**
-2. Edit `expanded-telemetry.cfg` directly and set `ServerUrl=http://your-server/telemetry`
+**macOS**: `~/Library/Application Support/SlayTheSpire2/mod_configs/expanded-telemetry.cfg`
 
-The server must accept `POST` requests with `Content-Type: application/x-ndjson`. Events are batched (~100 at a time) and sent every 200ms. Failed sends drop the batch and log a warning — gameplay and file writes are never affected. If `SendToServer` is ticked but `ServerUrl` is empty, the mod logs a misconfiguration error and disables remote output for that run.
+```json
+{
+  "WriteToFile": true,
+  "SendToServer": false,
+  "ServerUrl": ""
+}
+```
+
+Edit it directly to change settings. To enable remote streaming, set `SendToServer: true` and `ServerUrl` to your endpoint. The server must accept `POST` requests with `Content-Type: application/x-ndjson`. Events are batched (~100 at a time) and sent every ~200ms in a background thread — failed sends drop the batch and log a warning, with no impact on gameplay or file writes. If `SendToServer` is `true` but `ServerUrl` is empty, the mod logs a misconfiguration error and disables remote output for that run.
