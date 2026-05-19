@@ -19,13 +19,16 @@ internal sealed record RewardSummary(string reward_type, string? item);
 // Used by ShopOfferedPatch in OutOfCombatPatches.cs — must be internal, not private.
 internal sealed record ShopItemSummary(string item_type, string? item, int cost);
 
-// Streams telemetry events to disk as NDJSON (one JSON object per line) while a run
-// is in progress. The file is written to `in_progress.expanded_run` and renamed to
-// `{StartTime}.expanded_run` when the run ends, matching the game's .run file naming.
+// Routes telemetry events to one or both outputs (local file, remote server) based on
+// TelemetryConfig. Outputs are configured once at Open() time and held for the run.
 internal static class TelemetryStreamWriter
 {
-    private const string TempFileName = "in_progress.expanded_run";
+    private const string FileExtension = "expanded_run";
+    private const string TempFileName = "in_progress." + FileExtension;
 
+    private static bool _isOpen;
+    private static bool _writeToFile;
+    private static bool _sendToServer;
     private static StreamWriter? _writer;
     private static string? _tempFilePath;
 
@@ -38,21 +41,52 @@ internal static class TelemetryStreamWriter
     private sealed record PlayerStateEntry(ulong player, string character, int hp, int max_hp, int block, int energy, int max_energy, List<PowerEntry> powers);
     private sealed record MonsterStateEntry(string id, int hp, int max_hp, int block, List<PowerEntry> powers, List<IntentEntry> intents);
 
-    // Called once at the start of the first combat in a run. Idempotent — safe to call
-    // on every BeforeCombatStart; opens the file only if not already open.
+    // Idempotent — safe to call from every room entry and combat start.
+    // Reads config once per run; outputs are fixed until Finalize() resets state.
     public static void Open()
     {
-        if (_writer != null) return;
+        if (_isOpen) return;
+        _isOpen = true;
         try
         {
-            _tempFilePath = GetHistoryFilePath(TempFileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(_tempFilePath)!);
-            _writer = new StreamWriter(_tempFilePath, append: false) { AutoFlush = true };
+            var config = ModEntry.Config;
+            _writeToFile = config.WriteToFile;
+            _sendToServer = config.SendToServer;
+
+            if (_sendToServer)
+            {
+                if (string.IsNullOrWhiteSpace(config.ServerUrl))
+                {
+                    Log.Error("[expanded-telemetry] SendToServer is enabled but ServerUrl is not set. " +
+                              "Edit mod_configs/expanded-telemetry.cfg to add a ServerUrl. Remote streaming disabled for this run.");
+                    _sendToServer = false;
+                }
+                else
+                {
+                    RemoteSender.Start(config.ServerUrl);
+                }
+            }
+
+            if (!_writeToFile && !_sendToServer)
+                Log.Warn("[expanded-telemetry] Both WriteToFile and SendToServer are disabled — no telemetry will be recorded.");
+
+            if (_writeToFile)
+            {
+                _tempFilePath = GetHistoryFilePath(TempFileName);
+                Directory.CreateDirectory(Path.GetDirectoryName(_tempFilePath)!);
+                _writer = new StreamWriter(_tempFilePath, append: false) { AutoFlush = true };
+            }
+
             WriteEvent(new { event_type = "run_start", timestamp = Now });
         }
         catch (Exception ex)
         {
             Log.Error("[expanded-telemetry] Failed to open telemetry stream: " + ex.Message);
+            _isOpen = false;
+            _writeToFile = false;
+            _sendToServer = false;
+            _writer = null;
+            _tempFilePath = null;
         }
     }
 
@@ -152,27 +186,36 @@ internal static class TelemetryStreamWriter
     public static void WriteCombatEnd(string encounterId, string outcome)
         => WriteEvent(new { event_type = "combat_end", encounter = encounterId, outcome, timestamp = Now });
 
-    // Called by CreateRunHistoryEntryPatch. Writes the final run_end event, closes the
-    // stream, and renames the temp file to match the game's {StartTime}.run filename.
+    // Called by CreateRunHistoryEntryPatch. Writes run_end, flushes all outputs,
+    // renames the temp file, and resets all run state.
     public static void Finalize(long startTime, bool win, bool abandoned, string character, int ascension, int numPlayers)
     {
         try
         {
             WriteEvent(new { event_type = "run_end", win, abandoned, character, ascension, num_players = numPlayers, timestamp = Now });
+
             _writer?.Close();
             _writer = null;
 
             if (_tempFilePath != null && File.Exists(_tempFilePath))
             {
-                string finalPath = GetHistoryFilePath($"{startTime}.expanded_run");
+                string finalPath = GetHistoryFilePath($"{startTime}.{FileExtension}");
                 File.Move(_tempFilePath, finalPath, overwrite: true);
                 Log.Info($"[expanded-telemetry] Finalized telemetry to {finalPath}");
-                _tempFilePath = null;
             }
+
+            if (_sendToServer)
+                RemoteSender.Flush(timeoutMs: 3000);
         }
         catch (Exception ex)
         {
             Log.Error("[expanded-telemetry] Failed to finalize telemetry stream: " + ex.Message + "\n" + ex.StackTrace);
+        }
+        finally
+        {
+            _isOpen = false;
+            _writeToFile = false;
+            _sendToServer = false;
             _writer = null;
             _tempFilePath = null;
         }
@@ -180,10 +223,12 @@ internal static class TelemetryStreamWriter
 
     private static void WriteEvent(object evt)
     {
-        if (_writer == null) return;
+        if (!_isOpen) return;
         try
         {
-            _writer.WriteLine(JsonSerializer.Serialize(evt, evt.GetType()));
+            string json = JsonSerializer.Serialize(evt, evt.GetType());
+            _writer?.WriteLine(json);
+            if (_sendToServer) RemoteSender.Enqueue(json);
         }
         catch (Exception ex)
         {

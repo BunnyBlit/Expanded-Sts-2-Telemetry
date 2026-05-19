@@ -10,9 +10,13 @@ public static class ModEntry
 {
     private static Harmony? _harmony;
 
+    internal static TelemetryConfig Config { get; private set; } = new TelemetryConfig();
+
     public static void Init()
     {
         Log.Warn("[expanded-telemetry] Initializing...");
+
+        Config = TelemetryConfig.Load();
 
         _harmony = new Harmony("com.blit.expandedtelemetry");
         _harmony.PatchAll();
