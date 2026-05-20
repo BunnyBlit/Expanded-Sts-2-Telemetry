@@ -63,14 +63,13 @@ All other fields are event-specific.
 
 - **`encounter`**: the monster group's model ID (e.g. `"GREMLIN_NOB"`, `"JAW_WORM"`)
 - **`card`**: card model ID (e.g. `"STRIKE_RED"`, `"THUNDERCLAP"`)
-- **`player`**: player `NetId` as a 64-bit unsigned integer (ulong JSON number)
+- **`player`**: Steam64 ID (same as `NetId`) as a 64-bit unsigned integer (ulong JSON number) — stable per account across all sessions. Present on **every event** as the session owner.
 - **`character`**: character model ID (e.g. `"IRONCLAD"`, `"DEFECT"`)
-- **`target`** / **`dealer`** / **`applier`**: creature model ID strings (e.g. `"GREMLIN_NOB"`, `"IRONCLAD_BODY"`) — nullable where noted
+- **Creature instance IDs** (`target`, `dealer`, `applier`, `monster`, `monsters[].id`, `targets[]`): `"{ModelId}:{CombatId}"` format (e.g. `"GREMLIN_NOB:1"`, `"IRONCLAD_BODY:0"`). `CombatId` is a uint assigned sequentially when each creature joins combat — two enemies of the same type get different values. Scoped to the current encounter; the same numeric suffix may recur in a different combat.
 - **`power`**: power model ID (e.g. `"POISON"`, `"STRENGTH"`)
 - **`relic`**: relic model ID (e.g. `"ANCHOR"`, `"CENTENNIAL_PUZZLE"`)
 - **`orb`**: orb model ID (e.g. `"LIGHTNING"`, `"DARK"`, `"FROST"`)
 - **`potion`**: potion model ID (e.g. `"FIRE_POTION"`, `"BLOCK_POTION"`)
-- **`monster`**: monster creature model ID (same namespace as `encounter`)
 
 ## Event reference
 
@@ -79,13 +78,13 @@ All other fields are event-specific.
 #### `run_start`
 First event of every run.
 ```json
-{"event_type":"run_start","timestamp":1776012547}
+{"event_type":"run_start","player":76561197983754930,"timestamp":1776012547}
 ```
 
 #### `run_end`
 Last event of every run.
 ```json
-{"event_type":"run_end","win":true,"abandoned":false,"character":"IRONCLAD","ascension":0,"num_players":1,"timestamp":1776015000}
+{"event_type":"run_end","win":true,"abandoned":false,"character":"IRONCLAD","ascension":0,"num_players":1,"player":76561197983754930,"timestamp":1776015000}
 ```
 | Field | Type | Notes |
 |-------|------|-------|
@@ -109,7 +108,7 @@ Fires for every floor, every room type. Always appears before floor-specific eve
 | `room_type` | string | one of: `Monster`, `Elite`, `Boss`, `Event`, `Shop`, `RestSite`, `Treasure` |
 | `floor` | int | monotonically increasing floor number across the run |
 | `act` | int | 1, 2, or 3 |
-| `player` | ulong | NetId of the first player |
+| `player` | ulong | Steam64 session owner (same as `NetId`, stable per account) |
 
 ---
 
@@ -117,7 +116,7 @@ Fires for every floor, every room type. Always appears before floor-specific eve
 
 #### `combat_start`
 ```json
-{"event_type":"combat_start","encounter":"GREMLIN_NOB","timestamp":1776012549}
+{"event_type":"combat_start","encounter":"GREMLIN_NOB","player":76561197983754930,"timestamp":1776012549}
 ```
 
 #### `turn_start`
@@ -127,6 +126,7 @@ Fires before card draws for that turn. Includes full state snapshots.
   "event_type": "turn_start",
   "encounter": "GREMLIN_NOB",
   "turn": 1,
+  "player": 76561197983754930,
   "players": [
     {
       "player": 76561197983754930,
@@ -141,7 +141,7 @@ Fires before card draws for that turn. Includes full state snapshots.
   ],
   "monsters": [
     {
-      "id": "GREMLIN_NOB",
+      "id": "GREMLIN_NOB:1",
       "hp": 85,
       "max_hp": 85,
       "block": 0,
@@ -159,12 +159,12 @@ Fires before card draws for that turn. Includes full state snapshots.
 
 #### `turn_end`
 ```json
-{"event_type":"turn_end","encounter":"GREMLIN_NOB","turn":1,"timestamp":1776012555}
+{"event_type":"turn_end","encounter":"GREMLIN_NOB","turn":1,"player":76561197983754930,"timestamp":1776012555}
 ```
 
 #### `combat_end`
 ```json
-{"event_type":"combat_end","encounter":"GREMLIN_NOB","outcome":"victory","timestamp":1776012560}
+{"event_type":"combat_end","encounter":"GREMLIN_NOB","outcome":"victory","player":76561197983754930,"timestamp":1776012560}
 ```
 `outcome` is `"victory"` or `"defeat"`.
 
@@ -184,9 +184,9 @@ All card events include `encounter`, `card`, `player` (NetId ulong), `character`
 
 #### `card_play`
 ```json
-{"event_type":"card_play","encounter":"GREMLIN_NOB","card":"STRIKE_RED","player":76561197983754930,"character":"IRONCLAD","target":"GREMLIN_NOB","turn":1,"upgrade_level":0,"is_auto_play":false,"timestamp":1776012551}
+{"event_type":"card_play","encounter":"GREMLIN_NOB","card":"STRIKE_RED","player":76561197983754930,"character":"IRONCLAD","target":"GREMLIN_NOB:1","turn":1,"upgrade_level":0,"is_auto_play":false,"timestamp":1776012551}
 ```
-- `target`: creature model ID of the target, or `null` for untargeted/AOE cards
+- `target`: creature instance ID (`{ModelId}:{CombatId}`) of the target, or `null` for untargeted/AOE cards
 - `is_auto_play`: `true` if triggered by a power or relic; `false` if played by the player directly
 
 #### `card_discard`
@@ -208,29 +208,29 @@ All card events include `encounter`, `card`, `player` (NetId ulong), `character`
 #### `damage_dealt`
 Fires for every damage instance (player takes damage and monster takes damage).
 ```json
-{"event_type":"damage_dealt","encounter":"GREMLIN_NOB","target":"IRONCLAD_BODY","dealer":"GREMLIN_NOB","hp_lost":14,"blocked":0,"overkill":0,"turn":1,"timestamp":1776012556}
+{"event_type":"damage_dealt","encounter":"GREMLIN_NOB","target":"IRONCLAD_BODY:0","dealer":"GREMLIN_NOB:1","hp_lost":14,"blocked":0,"overkill":0,"turn":1,"player":76561197983754930,"timestamp":1776012556}
 ```
 - `dealer`: null if the damage has no source creature
 - `overkill`: excess damage past 0 HP (> 0 only on killing blows)
 
 #### `block_gained`
 ```json
-{"event_type":"block_gained","encounter":"GREMLIN_NOB","target":"IRONCLAD_BODY","amount":5,"turn":1,"timestamp":1776012552}
+{"event_type":"block_gained","encounter":"GREMLIN_NOB","target":"IRONCLAD_BODY:0","amount":5,"turn":1,"player":76561197983754930,"timestamp":1776012552}
 ```
 Fires for all block gains including large relic-granted values at combat start (e.g. Plating).
 
 #### `power_applied`
 ```json
-{"event_type":"power_applied","encounter":"GREMLIN_NOB","power":"POISON","target":"GREMLIN_NOB","applier":"IRONCLAD_BODY","amount":3,"turn":1,"timestamp":1776012553}
+{"event_type":"power_applied","encounter":"GREMLIN_NOB","power":"POISON","target":"GREMLIN_NOB:1","applier":"IRONCLAD_BODY:0","amount":3,"turn":1,"player":76561197983754930,"timestamp":1776012553}
 ```
 - `applier`: null when the power self-decrements (e.g. Poison ticking down at end of turn)
 - `amount`: negative when a power self-decrements
 
 #### `potion_use`
 ```json
-{"event_type":"potion_use","encounter":"GREMLIN_NOB","potion":"FIRE_POTION","player":76561197983754930,"character":"IRONCLAD","target":"GREMLIN_NOB","turn":1,"timestamp":1776012553}
+{"event_type":"potion_use","encounter":"GREMLIN_NOB","potion":"FIRE_POTION","player":76561197983754930,"character":"IRONCLAD","target":"GREMLIN_NOB:1","turn":1,"timestamp":1776012553}
 ```
-- `target`: player's own creature ID for self-targeted potions (e.g. Block Potion), monster ID for targeted potions (e.g. Fire Potion), `null` for AOE potions (e.g. Explosive Ampoule)
+- `target`: player's own creature instance ID for self-targeted potions (e.g. Block Potion), monster instance ID for targeted potions (e.g. Fire Potion), `null` for AOE potions (e.g. Explosive Ampoule)
 
 #### `orb_channeled`
 Defect character only.
@@ -251,18 +251,18 @@ Stars-based characters only.
 #### `monster_action`
 Fires after each monster performs its move. Appears between `turn_end N` and `turn_start N+1`.
 ```json
-{"event_type":"monster_action","encounter":"GREMLIN_NOB","monster":"GREMLIN_NOB","move":"BASH","intents":["Attack"],"targets":["IRONCLAD_BODY"],"turn":1,"timestamp":1776012556}
+{"event_type":"monster_action","encounter":"GREMLIN_NOB","monster":"GREMLIN_NOB:1","move":"BASH","intents":["Attack"],"targets":["IRONCLAD_BODY:0"],"turn":1,"player":76561197983754930,"timestamp":1776012556}
 ```
 - `move`: the move state ID the monster performed
 - `intents`: `IntentType` strings confirming what happened (may differ from the `turn_start` snapshot for dynamically chosen moves)
-- `targets`: creature IDs of targets; non-empty for most moves including buffs (the game passes player creatures as targets regardless of move type); empty only for untargeted moves like escape
+- `targets`: creature instance IDs of targets; non-empty for most moves including buffs (the game passes player creatures as targets regardless of move type); empty only for untargeted moves like escape
 
 #### `relic_trigger`
 Fires whenever a relic flashes during combat.
 ```json
-{"event_type":"relic_trigger","encounter":"GREMLIN_NOB","relic":"ANCHOR","player":76561197983754930,"targets":["IRONCLAD_BODY"],"turn":0,"timestamp":1776012549}
+{"event_type":"relic_trigger","encounter":"GREMLIN_NOB","relic":"ANCHOR","player":76561197983754930,"targets":["IRONCLAD_BODY:0"],"turn":0,"timestamp":1776012549}
 ```
-- `targets`: creature IDs the flash targeted (typically the owner's creature)
+- `targets`: creature instance IDs the flash targeted (typically the owner's creature)
 - `turn:0` is valid (relics that fire during `BeforeCombatStart`, e.g. Anchor, Blood Pact)
 
 ---
@@ -294,7 +294,7 @@ Fires when the player claims a reward.
 {"event_type":"reward_taken","reward_type":"gold","item":null,"amount":25,"floor":1,"player":76561197983754930,"timestamp":1776012562}
 {"event_type":"reward_taken","reward_type":"relic","item":"ANCHOR","floor":1,"player":76561197983754930,"timestamp":1776012562}
 ```
-- `reward_type: "card"` — `item` is **always null** (which specific card was taken is not exposed at hook time; infer from `rewards_offered` + the player's updated deck)
+- `reward_type: "card"` — `item` is **always null** (which specific card was taken is not exposed at hook time; the taken card can be inferred from `rewards_offered` — whichever offered card subsequently appears in the player's deck)
 - `reward_type: "gold"` — `amount` field is present; `item` is null
 - `reward_type: "relic"` / `"potion"` — `item` is the model ID
 
@@ -345,13 +345,13 @@ room_entered        (floor N, room_type: "Monster")
 combat_start        (encounter: "JAW_WORM")
 turn_start          (turn: 1, players snapshot, monsters snapshot)
   card_draw × 5    (from_hand_draw: true)
-  card_play         (target: "JAW_WORM")
-  damage_dealt      (target: "JAW_WORM", ...)
-  block_gained      (target: "IRONCLAD_BODY", ...)
+  card_play         (target: "JAW_WORM:1")
+  damage_dealt      (target: "JAW_WORM:1", ...)
+  block_gained      (target: "IRONCLAD_BODY:0", ...)
   card_discard × N  (from_flush: true)
 turn_end            (turn: 1)
-monster_action      (monster: "JAW_WORM", move: "CHOMP", ...)
-damage_dealt        (target: "IRONCLAD_BODY", ...)
+monster_action      (monster: "JAW_WORM:1", move: "CHOMP", targets: ["IRONCLAD_BODY:0"])
+damage_dealt        (target: "IRONCLAD_BODY:0", ...)
 turn_start          (turn: 2, ...)
   ...
 turn_end            (turn: K)

@@ -65,34 +65,36 @@ Hot-reload is available via MCP: use `watch_project` with `sts2-mcp-watch.json` 
 
 `run_start`, `room_entered`, `combat_start`, `turn_start`, `card_draw`, `card_play`, `card_discard`, `card_exhaust`, `potion_use`, `power_applied`, `damage_dealt`, `block_gained`, `orb_channeled`, `stars_gained`, `relic_trigger`, `monster_action`, `turn_end`, `combat_end`, `rewards_offered`, `reward_taken`, `event_choice`, `rest_site_choice`, `shop_offered`, `shop_purchase`, `run_end`
 
-Each event includes a `timestamp` (Unix seconds UTC). The `run_start` event is written when the stream is first opened (on the first `room_entered` or `combat_start` of a run).
+Each event includes `player` (Steam64 ulong = `NetId`, stable per account, captured via `PlatformUtil.GetLocalPlayerId` at `Open()`) and `timestamp` (Unix seconds UTC). The `run_start` event is written when the stream is first opened (on the first `room_entered` or `combat_start` of a run).
+
+Creature instance IDs (`target`, `dealer`, `applier`, `monster`, `monsters[].id`, `targets[]`) use `"{ModelId}:{CombatId}"` format (e.g. `"GREMLIN_NOB:2"`). `CombatId` is a `uint?` assigned sequentially by `CombatState.AttachCreature()`, unique per combat. See `TelemetryStreamWriter.CreatureId(Creature)`.
 
 ### Event Fields
 
 | Event | Extra fields |
 |-------|-------------|
-| `room_entered` | `room_type` (RoomType enum string), `floor` (int), `act` (int, 1-based), `player` (NetId of first player) |
-| `combat_start` | `encounter` |
-| `turn_start` | `encounter`, `turn`, `players` (array — each: `player` NetId, `character`, `hp`, `max_hp`, `block`, `energy`, `max_energy`, `powers[]` `{power, amount}`), `monsters` (array — each: `id`, `hp`, `max_hp`, `block`, `powers[]` `{power, amount}`, `intents[]` `{type}`) |
+| `room_entered` | `room_type` (RoomType enum string), `floor` (int), `act` (int, 1-based), `player` (Steam64) |
+| `combat_start` | `encounter`, `player` |
+| `turn_start` | `encounter`, `turn`, `player`, `players` (array — each: `player` NetId, `character`, `hp`, `max_hp`, `block`, `energy`, `max_energy`, `powers[]` `{power, amount}`), `monsters` (array — each: `id` (creature instance ID), `hp`, `max_hp`, `block`, `powers[]` `{power, amount}`, `intents[]` `{type}`) |
 | `card_draw` | `encounter`, `card`, `player`, `from_hand_draw` (bool — true = start-of-turn draw, false = effect-triggered), `turn`, `upgrade_level` (int — 0 = base, 1 = upgraded) |
-| `card_play` | `encounter`, `card`, `player`, `target` (monster ID or null for untargeted), `turn`, `upgrade_level`, `is_auto_play` (bool — true = triggered by power/relic, false = played by player; **needs manual verification**) |
+| `card_play` | `encounter`, `card`, `player`, `target` (creature instance ID or null for untargeted), `turn`, `upgrade_level`, `is_auto_play` (bool — true = triggered by power/relic, false = played by player; **needs manual verification**) |
 | `card_discard` | `encounter`, `card`, `player`, `from_flush` (bool — true = end-of-turn hand flush, false = explicit/effect discard), `turn`, `upgrade_level` |
 | `card_exhaust` | `encounter`, `card`, `player`, `from_ethereal` (bool — true = Ethereal keyword auto-exhaust at end of turn, false = explicit card/power effect), `turn`, `upgrade_level` |
-| `potion_use` | `encounter`, `potion`, `player`, `target` (creature ID, player's own ID for self-targeted, null for untargeted/AOE), `turn` |
-| `power_applied` | `encounter`, `power` (PowerModel id), `target` (creature ModelId), `applier` (nullable creature ModelId — null when power self-decrements), `amount` (int, negative for stack reductions), `turn` |
-| `damage_dealt` | `encounter`, `target` (creature ModelId), `dealer` (nullable creature ModelId), `hp_lost` (int), `blocked` (int), `overkill` (int), `turn` |
-| `block_gained` | `encounter`, `target` (creature ModelId), `amount` (int), `turn` |
+| `potion_use` | `encounter`, `potion`, `player`, `target` (creature instance ID, player's own for self-targeted, null for untargeted/AOE), `turn` |
+| `power_applied` | `encounter`, `power` (PowerModel id), `target` (creature instance ID), `applier` (nullable creature instance ID — null when power self-decrements), `amount` (int, negative for stack reductions), `turn`, `player` |
+| `damage_dealt` | `encounter`, `target` (creature instance ID), `dealer` (nullable creature instance ID), `hp_lost` (int), `blocked` (int), `overkill` (int), `turn`, `player` |
+| `block_gained` | `encounter`, `target` (creature instance ID), `amount` (int), `turn`, `player` |
 | `orb_channeled` | `encounter`, `player` (NetId ulong), `orb` (OrbModel id), `turn` — Defect only |
 | `stars_gained` | `encounter`, `player` (NetId ulong), `amount` (int), `turn` — stars characters only |
-| `relic_trigger` | `encounter`, `relic` (RelicModel id), `player` (owner NetId), `targets` (list of creature ModelIds the flash targeted), `turn` |
-| `monster_action` | `encounter`, `monster` (creature ModelId), `move` (MoveState id), `intents` (list of IntentType strings), `targets` (list of creature ModelIds, empty if untargeted), `turn` |
+| `relic_trigger` | `encounter`, `relic` (RelicModel id), `player` (owner NetId), `targets` (list of creature instance IDs the flash targeted), `turn` |
+| `monster_action` | `encounter`, `monster` (creature instance ID), `move` (MoveState id), `intents` (list of IntentType strings), `targets` (list of creature instance IDs, empty if untargeted), `turn`, `player` |
 | `rewards_offered` | `rewards` (array of `{reward_type, item}` — `reward_type`: `"card"` / `"relic"` / `"potion"` / `"gold"`; `item`: card/relic/potion ID or gold amount string), `floor`, `player` |
 | `reward_taken` | `reward_type` (`"card"` / `"relic"` / `"potion"` / `"gold"`), `item` (ID string — null for `card` and `gold`), `amount` (int — present only on `gold`), `floor`, `player` |
 | `event_choice` | `event` (EventModel id), `option_key` (TextKey string of the chosen option), `floor`, `player` |
 | `rest_site_choice` | `option` (OptionId string: `"HEAL"` / `"SMITH"` / `"DIG"` / `"CLONE"` / `"MEND"` / `"LIFT"` / `"HATCH"` / `"COOK"`), `floor`, `player` |
 | `shop_offered` | `items` (array of `{item_type, item, cost}` — `item_type`: `"card"` / `"relic"` / `"potion"` / `"card_removal"`; `item`: ID string or null for `card_removal`; `cost`: int gold price), `floor`, `player` |
 | `shop_purchase` | `item_type` (`"card"` / `"relic"` / `"potion"` / `"card_removal"`), `item` (ID string or null for `card_removal`), `gold_spent` (int), `floor`, `player` |
-| `run_end` | `win`, `abandoned`, `character`, `ascension`, `num_players` |
+| `run_end` | `win`, `abandoned`, `character`, `ascension`, `num_players`, `player` |
 
 ## Key Design Decisions
 

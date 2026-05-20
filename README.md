@@ -35,42 +35,46 @@ One JSON object per line (NDJSON). Example sequence from a single combat:
 
 ### Event reference
 
+All events include `player` (Steam64 `ulong`, the session owner — same as `NetId`, stable per account across runs) and `timestamp` (Unix seconds UTC).
+
 | Event | Fields |
 |-------|--------|
-| `run_start` | `timestamp` |
+| `run_start` | `player`, `timestamp` |
 | `room_entered` | `room_type`, `floor`, `act`, `player`, `timestamp` |
-| `combat_start` | `encounter`, `timestamp` |
-| `turn_start` | `encounter`, `turn`, `players` (array), `monsters` (array), `timestamp` |
+| `combat_start` | `encounter`, `player`, `timestamp` |
+| `turn_start` | `encounter`, `turn`, `player`, `players` (array), `monsters` (array), `timestamp` |
 | `card_draw` | `encounter`, `card`, `player`, `from_hand_draw`, `turn`, `upgrade_level`, `timestamp` |
 | `card_play` | `encounter`, `card`, `player`, `target` (null if untargeted), `turn`, `upgrade_level`, `is_auto_play`, `timestamp` |
 | `card_discard` | `encounter`, `card`, `player`, `from_flush`, `turn`, `upgrade_level`, `timestamp` |
 | `card_exhaust` | `encounter`, `card`, `player`, `from_ethereal`, `turn`, `upgrade_level`, `timestamp` |
 | `potion_use` | `encounter`, `potion`, `player`, `target` (null if untargeted), `turn`, `timestamp` |
-| `power_applied` | `encounter`, `power`, `target`, `applier` (null if self-decremented), `amount`, `turn`, `timestamp` |
-| `damage_dealt` | `encounter`, `target`, `dealer` (null if no source creature), `hp_lost`, `blocked`, `overkill`, `turn`, `timestamp` |
-| `block_gained` | `encounter`, `target`, `amount`, `turn`, `timestamp` |
+| `power_applied` | `encounter`, `power`, `target`, `applier` (null if self-decremented), `amount`, `turn`, `player`, `timestamp` |
+| `damage_dealt` | `encounter`, `target`, `dealer` (null if no source creature), `hp_lost`, `blocked`, `overkill`, `turn`, `player`, `timestamp` |
+| `block_gained` | `encounter`, `target`, `amount`, `turn`, `player`, `timestamp` |
 | `orb_channeled` | `encounter`, `player`, `orb`, `turn`, `timestamp` — Defect only |
 | `stars_gained` | `encounter`, `player`, `amount`, `turn`, `timestamp` — stars characters only |
-| `relic_trigger` | `encounter`, `relic`, `player`, `targets` (array of creature IDs), `turn`, `timestamp` |
-| `monster_action` | `encounter`, `monster`, `move`, `intents` (array of strings), `targets` (array of creature IDs), `turn`, `timestamp` |
-| `turn_end` | `encounter`, `turn`, `timestamp` |
-| `combat_end` | `encounter`, `outcome` (`"victory"` or `"defeat"`), `timestamp` |
+| `relic_trigger` | `encounter`, `relic`, `player`, `targets` (array of creature instance IDs), `turn`, `timestamp` |
+| `monster_action` | `encounter`, `monster`, `move`, `intents` (array of strings), `targets` (array of creature instance IDs), `turn`, `player`, `timestamp` |
+| `turn_end` | `encounter`, `turn`, `player`, `timestamp` |
+| `combat_end` | `encounter`, `outcome` (`"victory"` or `"defeat"`), `player`, `timestamp` |
 | `rewards_offered` | `rewards` (array of `{reward_type, item}`), `floor`, `player`, `timestamp` |
 | `reward_taken` | `reward_type`, `item` (null for card/gold), `amount` (gold only), `floor`, `player`, `timestamp` |
 | `event_choice` | `event`, `option_key`, `floor`, `player`, `timestamp` |
 | `rest_site_choice` | `option`, `floor`, `player`, `timestamp` |
 | `shop_offered` | `items` (array of `{item_type, item, cost}`), `floor`, `player`, `timestamp` |
 | `shop_purchase` | `item_type`, `item` (null for card_removal), `gold_spent`, `floor`, `player`, `timestamp` |
-| `run_end` | `win`, `abandoned`, `character`, `ascension`, `num_players`, `timestamp` |
+| `run_end` | `win`, `abandoned`, `character`, `ascension`, `num_players`, `player`, `timestamp` |
 
 ### Disambiguating fields
 
 - **`from_hand_draw`** (bool on `card_draw`): `true` = drawn as part of the start-of-turn hand deal; `false` = drawn by a card effect, power, or relic mid-turn.
 - **`from_flush`** (bool on `card_discard`): `true` = discarded as part of the end-of-turn hand flush; `false` = discarded by an explicit effect (card like Acrobatics or Calculated Gamble, a boss mechanic, etc.).
 - **`from_ethereal`** (bool on `card_exhaust`): `true` = card had the Ethereal keyword and was auto-exhausted at end of turn (e.g. Dazed); `false` = exhausted by an explicit card or power effect (e.g. Slimed status cards).
-- **`target`** (string or null on `card_play`, `potion_use`): creature model ID of the target; `null` for untargeted/AOE effects. On `potion_use` specifically: the player's own creature ID for self-targeted potions (e.g. Block Potion), a monster ID for targeted potions (e.g. Fire Potion), and `null` for AOE potions (e.g. Explosive Ampoule).
+- **`player`** (ulong on all events): Steam64 ID of the session owner — equal to `NetId`, stable per account across runs. Use to partition events by user at an ingest server. On events with an explicit actor (`card_*`, `potion_use`, `orb_channeled`, `stars_gained`) `player` is that actor's ID; in single-player the session owner and actor are always the same. On `relic_trigger`, `player` is the relic owner.
+- **Creature instance IDs** (`target`, `dealer`, `applier`, `monster`, `monsters[].id`, `targets[]`): `"{ModelId}:{CombatId}"` format (e.g. `"GREMLIN_NOB:2"`). `CombatId` is a uint assigned sequentially per combat — two enemies of the same type get different values. Scoped to the current encounter; the same `CombatId` value may recur in a different combat.
+- **`target`** (string or null on `card_play`, `potion_use`): creature instance ID of the target; `null` for untargeted/AOE effects. On `potion_use` specifically: the player's own creature instance ID for self-targeted potions (e.g. Block Potion), a monster instance ID for targeted potions (e.g. Fire Potion), and `null` for AOE potions (e.g. Explosive Ampoule).
 - **`players`** (array on `turn_start`): snapshot of each player's state at turn start — `player` (NetId), `character`, `hp`, `max_hp`, `block`, `energy`, `max_energy`, `powers` (array of `{power, amount}`). Block is 0 for the player at turn start since it resets each turn.
-- **`monsters`** (array on `turn_start`): snapshot of each living enemy at turn start — `id`, `hp`, `max_hp`, `block`, `powers` (array of `{power, amount}`), `intents` (array of `{type}` where type is the `IntentType` string e.g. `"Attack"`, `"Buff"`, `"Debuff"`). An empty `intents` list means no move has been rolled yet (e.g. a monster that just spawned).
+- **`monsters`** (array on `turn_start`): snapshot of each living enemy at turn start — `id` (creature instance ID in `{ModelId}:{CombatId}` format), `hp`, `max_hp`, `block`, `powers` (array of `{power, amount}`), `intents` (array of `{type}` where type is the `IntentType` string e.g. `"Attack"`, `"Buff"`, `"Debuff"`). An empty `intents` list means no move has been rolled yet (e.g. a monster that just spawned).
 - **`turn`** (int on most combat events): the turn number within the current combat. `turn_start` and `turn_end` bracket each player turn; all events between them carry the matching `turn` value. **`turn:0`** is a special "combat setup" phase covering events that fire before the first player turn begins (e.g. the Defect's starting orb channel, relic block grants from `BeforeCombatStart`).
 - **`upgrade_level`** (int on card events): `0` = base card, `1` = upgraded, `2+` = double-upgraded. Present on `card_draw`, `card_play`, `card_discard`, and `card_exhaust`.
 - **`is_auto_play`** (bool on `card_play`): `true` = card was played automatically by a power or relic effect; `false` = played by the player.
@@ -84,12 +88,12 @@ One JSON object per line (NDJSON). Example sequence from a single combat:
 - **`rewards`** (array on `rewards_offered`): all reward options shown on the screen. Each element is `{reward_type, item}` where `reward_type` is `"card"` / `"relic"` / `"potion"` / `"gold"` and `item` is the model ID (or gold amount as a string). A single `CardReward` with 3 options produces 3 entries. Correlate with `reward_taken` on `floor` + `player` to find what was offered but skipped.
 - **`reward_type`** (string on `reward_taken`): same values as in `rewards_offered`. `"card"` rewards omit `item` (which specific card was taken is not available at hook time); `"gold"` rewards include `amount` instead of `item`.
 - **`relic`** (string on `relic_trigger`): the relic model ID that activated (e.g. `"ANCHOR"`, `"CENTENNIAL_PUZZLE"`).
-- **`monster`** (string on `monster_action`): creature model ID of the monster that acted (e.g. `"GREMLIN_NOB"`).
 - **`move`** (string on `monster_action`): the move state ID the monster performed (e.g. `"BASH"`, `"THRASH"`, `"STUNNED"`).
 - **`intents`** (array on `monster_action`): `IntentType` strings describing the move (e.g. `["Attack"]`, `["Buff"]`, `["Debuff", "Attack"]`). Confirms what actually happened vs. the intent snapshot in `turn_start`.
-- **`targets`** (array on `monster_action`): creature model IDs of the targets. Empty for untargeted moves (buffs, heals, escapes). Non-empty for attacks — typically the player creature(s).
+- **`targets`** (array on `monster_action`): creature instance IDs of the targets. Empty for untargeted moves (buffs, heals, escapes). Non-empty for attacks — typically the player creature(s).
 - **`amount`** (int on `power_applied`, `block_gained`, `stars_gained`): stack/amount change. Can be **negative** on `power_applied` when a power self-decrements (e.g. Poison ticking down at end of turn).
-- **`applier`** (string or null on `power_applied`): creature model ID of whatever applied the power; `null` when the power decrements on its own.
+- **`applier`** (string or null on `power_applied`): creature instance ID of whatever applied the power; `null` when the power decrements on its own.
+- **`monster`** (string on `monster_action`): creature instance ID of the monster that acted (e.g. `"GREMLIN_NOB:1"`).
 - **`hp_lost`**, **`blocked`**, **`overkill`** (ints on `damage_dealt`): breakdown of a single damage instance. `hp_lost` = HP actually removed; `blocked` = absorbed by block; `overkill` = excess damage beyond remaining HP (> 0 on killing blows only).
 
 ## Build & deploy
