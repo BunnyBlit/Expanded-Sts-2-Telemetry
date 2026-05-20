@@ -154,11 +154,14 @@ public static class ShopPurchasePatch
 }
 
 // RelicReward._relic is private — access via cached reflection for rewards_offered.
+// CardReward card list is captured here for diffing in RewardTakenPatch.
 [HarmonyPatch(typeof(Hook), nameof(Hook.BeforeRewardsOffered))]
 public static class RewardsOfferedPatch
 {
     private static readonly FieldInfo _relicField =
         typeof(RelicReward).GetField("_relic", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    internal static readonly ConditionalWeakTable<CardReward, List<string>> CardSnapshot = new();
 
     public static void Postfix(IRunState runState, Player player, IReadOnlyList<Reward> rewards)
     {
@@ -169,8 +172,10 @@ public static class RewardsOfferedPatch
             switch (reward)
             {
                 case CardReward cardReward:
-                    foreach (var card in cardReward.Cards)
-                        summaries.Add(new RewardSummary("card", card.Id.Entry));
+                    var cardIds = cardReward.Cards.Select(c => c.Id.Entry).ToList();
+                    CardSnapshot.AddOrUpdate(cardReward, cardIds);
+                    foreach (var id in cardIds)
+                        summaries.Add(new RewardSummary("card", id));
                     break;
                 case RelicReward relicReward:
                     var relic = _relicField.GetValue(relicReward) as RelicModel;
@@ -203,8 +208,14 @@ public static class RewardTakenPatch
 
         switch (reward)
         {
-            case CardReward:
+            case CardReward cardReward:
                 rewardType = "card";
+                if (RewardsOfferedPatch.CardSnapshot.TryGetValue(cardReward, out var offeredIds))
+                {
+                    RewardsOfferedPatch.CardSnapshot.Remove(cardReward);
+                    var remaining = cardReward.Cards.Select(c => c.Id.Entry).ToHashSet();
+                    itemId = offeredIds.FirstOrDefault(id => !remaining.Contains(id));
+                }
                 break;
             case RelicReward relicReward:
                 rewardType = "relic";

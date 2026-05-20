@@ -78,8 +78,11 @@ All other fields are event-specific.
 #### `run_start`
 First event of every run.
 ```json
-{"event_type":"run_start","player":76561197983754930,"timestamp":1776012547}
+{"event_type":"run_start","player":76561197983754930,"game_version":"v0.103.2","timestamp":1776012547}
 ```
+| Field | Type | Notes |
+|-------|------|-------|
+| `game_version` | string | game build version from `ReleaseInfoManager` (e.g. `"v0.103.2"`); `"dev"` for local/unversioned builds |
 
 #### `run_end`
 Last event of every run.
@@ -290,11 +293,11 @@ Each card on a card reward screen is a separate entry. `item` for gold rewards i
 #### `reward_taken`
 Fires when the player claims a reward.
 ```json
-{"event_type":"reward_taken","reward_type":"card","item":null,"floor":1,"player":76561197983754930,"timestamp":1776012562}
+{"event_type":"reward_taken","reward_type":"card","item":"BASH","floor":1,"player":76561197983754930,"timestamp":1776012562}
 {"event_type":"reward_taken","reward_type":"gold","item":null,"amount":25,"floor":1,"player":76561197983754930,"timestamp":1776012562}
 {"event_type":"reward_taken","reward_type":"relic","item":"ANCHOR","floor":1,"player":76561197983754930,"timestamp":1776012562}
 ```
-- `reward_type: "card"` — `item` is **always null** (which specific card was taken is not exposed at hook time; the taken card can be inferred from `rewards_offered` — whichever offered card subsequently appears in the player's deck)
+- `reward_type: "card"` — `item` is the card model ID of the picked card (null only if the player closes the reward screen without picking)
 - `reward_type: "gold"` — `amount` field is present; `item` is null
 - `reward_type: "relic"` / `"potion"` — `item` is the model ID
 

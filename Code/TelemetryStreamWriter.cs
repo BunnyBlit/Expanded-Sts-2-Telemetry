@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
+using MegaCrit.Sts2.Core.Debug;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Managers;
@@ -87,7 +88,8 @@ internal static class TelemetryStreamWriter
                 _writer = new StreamWriter(_tempFilePath, append: false) { AutoFlush = true };
             }
 
-            WriteEvent(new { event_type = "run_start", player = _localPlayerId, timestamp = Now });
+            string gameVersion = ReleaseInfoManager.Instance.ReleaseInfo?.Version ?? "dev";
+            WriteEvent(new { event_type = "run_start", player = _localPlayerId, game_version = gameVersion, timestamp = Now });
         }
         catch (Exception ex)
         {

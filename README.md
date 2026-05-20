@@ -39,7 +39,7 @@ All events include `player` (Steam64 `ulong`, the session owner — same as `Net
 
 | Event | Fields |
 |-------|--------|
-| `run_start` | `player`, `timestamp` |
+| `run_start` | `game_version`, `player`, `timestamp` |
 | `room_entered` | `room_type`, `floor`, `act`, `player`, `timestamp` |
 | `combat_start` | `encounter`, `player`, `timestamp` |
 | `turn_start` | `encounter`, `turn`, `player`, `players` (array), `monsters` (array), `timestamp` |
@@ -58,7 +58,7 @@ All events include `player` (Steam64 `ulong`, the session owner — same as `Net
 | `turn_end` | `encounter`, `turn`, `player`, `timestamp` |
 | `combat_end` | `encounter`, `outcome` (`"victory"` or `"defeat"`), `player`, `timestamp` |
 | `rewards_offered` | `rewards` (array of `{reward_type, item}`), `floor`, `player`, `timestamp` |
-| `reward_taken` | `reward_type`, `item` (null for card/gold), `amount` (gold only), `floor`, `player`, `timestamp` |
+| `reward_taken` | `reward_type`, `item` (card/relic/potion ID — null only for gold and skipped card rewards), `amount` (gold only), `floor`, `player`, `timestamp` |
 | `event_choice` | `event`, `option_key`, `floor`, `player`, `timestamp` |
 | `rest_site_choice` | `option`, `floor`, `player`, `timestamp` |
 | `shop_offered` | `items` (array of `{item_type, item, cost}`), `floor`, `player`, `timestamp` |
@@ -86,7 +86,7 @@ All events include `player` (Steam64 `ulong`, the session owner — same as `Net
 - **`items`** (array on `shop_offered`): the full shop inventory at the time the shop opens. Each element is `{item_type, item, cost}` where `item_type` is `"card"` / `"relic"` / `"potion"` / `"card_removal"`, `item` is the model ID (null for `card_removal`), and `cost` is the gold price. Correlate with `shop_purchase` on `floor` + `player` to find what was available but not bought.
 - **`item_type`** (string on `shop_purchase`): `"card"`, `"relic"`, `"potion"`, or `"card_removal"`. `item` is null for `card_removal`.
 - **`rewards`** (array on `rewards_offered`): all reward options shown on the screen. Each element is `{reward_type, item}` where `reward_type` is `"card"` / `"relic"` / `"potion"` / `"gold"` and `item` is the model ID (or gold amount as a string). A single `CardReward` with 3 options produces 3 entries. Correlate with `reward_taken` on `floor` + `player` to find what was offered but skipped.
-- **`reward_type`** (string on `reward_taken`): same values as in `rewards_offered`. `"card"` rewards omit `item` (which specific card was taken is not available at hook time); `"gold"` rewards include `amount` instead of `item`.
+- **`reward_type`** (string on `reward_taken`): same values as in `rewards_offered`. `"card"` rewards include `item` with the card model ID (null only if the player skips without picking); `"gold"` rewards include `amount` instead of `item`.
 - **`relic`** (string on `relic_trigger`): the relic model ID that activated (e.g. `"ANCHOR"`, `"CENTENNIAL_PUZZLE"`).
 - **`move`** (string on `monster_action`): the move state ID the monster performed (e.g. `"BASH"`, `"THRASH"`, `"STUNNED"`).
 - **`intents`** (array on `monster_action`): `IntentType` strings describing the move (e.g. `["Attack"]`, `["Buff"]`, `["Debuff", "Attack"]`). Confirms what actually happened vs. the intent snapshot in `turn_start`.
