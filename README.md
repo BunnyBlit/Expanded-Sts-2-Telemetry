@@ -12,11 +12,11 @@ Output sits alongside the game's own `.run` files:
 
 ```
 ~/Library/Application Support/SlayTheSpire2/steam/{UserID}/modded/profile{N}/saves/history/
-  1776012547.run               ← game's file
-  1776012547.expanded_run   ← this mod's file
+  1776012547.run                          ← game's file
+  1776012547.expanded_run                 ← this mod's file
 ```
 
-While a run is in progress the file is named `in_progress.expanded_run` and written with `AutoFlush=true` (crash-safe, readable mid-run). It is renamed to `{StartTime}.expanded_run` when the run ends.
+While a run is in progress the file is named `{run_id}.in_progress.expanded_run` and written with `AutoFlush=true` (crash-safe, readable mid-run). It is renamed to `{run_id}.expanded_run` when the run ends. `run_id` is the game's own start timestamp for the run (`RunManager.StartTime`) — stable across save/quit/resume, so resuming a run appends to the same file rather than overwriting it.
 
 ## Output format
 
@@ -35,41 +35,42 @@ One JSON object per line (NDJSON). Example sequence from a single combat:
 
 ### Event reference
 
-All events include `player` (Steam64 `ulong`, the session owner — same as `NetId`, stable per account across runs) and `timestamp` (Unix seconds UTC).
+All events include `player` (Steam64 `ulong`, the session owner — same as `NetId`, stable per account across runs), `run_id` (long, Unix seconds — stable across save/quit/resume; use `(player, run_id)` to uniquely identify a run), and `timestamp` (Unix seconds UTC).
 
-| Event | Fields |
+| Event | Event-specific fields |
 |-------|--------|
-| `run_start` | `game_version`, `player`, `timestamp` |
-| `room_entered` | `room_type`, `floor`, `act`, `player`, `timestamp` |
-| `combat_start` | `encounter`, `player`, `timestamp` |
-| `turn_start` | `encounter`, `turn`, `player`, `players` (array), `monsters` (array), `timestamp` |
-| `card_draw` | `encounter`, `card`, `player`, `from_hand_draw`, `turn`, `upgrade_level`, `timestamp` |
-| `card_play` | `encounter`, `card`, `player`, `target` (null if untargeted), `turn`, `upgrade_level`, `is_auto_play`, `timestamp` |
-| `card_discard` | `encounter`, `card`, `player`, `from_flush`, `turn`, `upgrade_level`, `timestamp` |
-| `card_exhaust` | `encounter`, `card`, `player`, `from_ethereal`, `turn`, `upgrade_level`, `timestamp` |
-| `potion_use` | `encounter`, `potion`, `player`, `target` (null if untargeted), `turn`, `timestamp` |
-| `power_applied` | `encounter`, `power`, `target`, `applier` (null if self-decremented), `amount`, `turn`, `player`, `timestamp` |
-| `damage_dealt` | `encounter`, `target`, `dealer` (null if no source creature), `hp_lost`, `blocked`, `overkill`, `turn`, `player`, `timestamp` |
-| `block_gained` | `encounter`, `target`, `amount`, `turn`, `player`, `timestamp` |
-| `orb_channeled` | `encounter`, `player`, `orb`, `turn`, `timestamp` — Defect only |
-| `stars_gained` | `encounter`, `player`, `amount`, `turn`, `timestamp` — stars characters only |
-| `relic_trigger` | `encounter`, `relic`, `player`, `targets` (array of creature instance IDs), `turn`, `timestamp` |
-| `monster_action` | `encounter`, `monster`, `move`, `intents` (array of strings), `targets` (array of creature instance IDs), `turn`, `player`, `timestamp` |
-| `turn_end` | `encounter`, `turn`, `player`, `timestamp` |
-| `combat_end` | `encounter`, `outcome` (`"victory"` or `"defeat"`), `player`, `timestamp` |
-| `rewards_offered` | `rewards` (array of `{reward_type, item}`), `floor`, `player`, `timestamp` |
-| `reward_taken` | `reward_type`, `item` (card/relic/potion ID — null only for gold and skipped card rewards), `amount` (gold only), `floor`, `player`, `timestamp` |
-| `event_choice` | `event`, `option_key`, `floor`, `player`, `timestamp` |
-| `rest_site_choice` | `option`, `floor`, `player`, `timestamp` |
-| `shop_offered` | `items` (array of `{item_type, item, cost}`), `floor`, `player`, `timestamp` |
-| `shop_purchase` | `item_type`, `item` (null for card_removal), `gold_spent`, `floor`, `player`, `timestamp` |
-| `run_end` | `win`, `abandoned`, `character`, `ascension`, `num_players`, `player`, `timestamp` |
+| `run_start` | `game_version`, `profile` (int, 1–3) |
+| `room_entered` | `room_type`, `floor`, `act` |
+| `combat_start` | `encounter` |
+| `turn_start` | `encounter`, `turn`, `players` (array), `monsters` (array) |
+| `card_draw` | `encounter`, `card`, `from_hand_draw`, `turn`, `upgrade_level` |
+| `card_play` | `encounter`, `card`, `target` (null if untargeted), `turn`, `upgrade_level`, `is_auto_play` |
+| `card_discard` | `encounter`, `card`, `from_flush`, `turn`, `upgrade_level` |
+| `card_exhaust` | `encounter`, `card`, `from_ethereal`, `turn`, `upgrade_level` |
+| `potion_use` | `encounter`, `potion`, `target` (null if untargeted), `turn` |
+| `power_applied` | `encounter`, `power`, `target`, `applier` (null if self-decremented), `amount`, `turn` |
+| `damage_dealt` | `encounter`, `target`, `dealer` (null if no source creature), `hp_lost`, `blocked`, `overkill`, `turn` |
+| `block_gained` | `encounter`, `target`, `amount`, `turn` |
+| `orb_channeled` | `encounter`, `orb`, `turn` — Defect only |
+| `stars_gained` | `encounter`, `amount`, `turn` — stars characters only |
+| `relic_trigger` | `encounter`, `relic`, `targets` (array of creature instance IDs), `turn` |
+| `monster_action` | `encounter`, `monster`, `move`, `intents` (array of strings), `targets` (array of creature instance IDs), `turn` |
+| `turn_end` | `encounter`, `turn` |
+| `combat_end` | `encounter`, `outcome` (`"victory"` or `"defeat"`) |
+| `rewards_offered` | `rewards` (array of `{reward_type, item}`), `floor` |
+| `reward_taken` | `reward_type`, `item` (card/relic/potion ID — null only for gold and skipped card rewards), `amount` (gold only), `floor` |
+| `event_choice` | `event`, `option_key`, `floor` |
+| `rest_site_choice` | `option`, `floor` |
+| `shop_offered` | `items` (array of `{item_type, item, cost}`), `floor` |
+| `shop_purchase` | `item_type`, `item` (null for card_removal), `gold_spent`, `floor` |
+| `run_end` | `win`, `abandoned`, `character`, `ascension`, `num_players` |
 
 ### Disambiguating fields
 
 - **`from_hand_draw`** (bool on `card_draw`): `true` = drawn as part of the start-of-turn hand deal; `false` = drawn by a card effect, power, or relic mid-turn.
 - **`from_flush`** (bool on `card_discard`): `true` = discarded as part of the end-of-turn hand flush; `false` = discarded by an explicit effect (card like Acrobatics or Calculated Gamble, a boss mechanic, etc.).
 - **`from_ethereal`** (bool on `card_exhaust`): `true` = card had the Ethereal keyword and was auto-exhausted at end of turn (e.g. Dazed); `false` = exhausted by an explicit card or power effect (e.g. Slimed status cards).
+- **`run_id`** (long on all events): Unix seconds timestamp from `RunManager.StartTime` — set when the run begins and loaded from the save file on resume, so it is stable across save/quit/resume cycles. Combined with `player`, `(player, run_id)` uniquely identifies a run globally. Also used to name the output files: `{run_id}.in_progress.expanded_run` while in progress, `{run_id}.expanded_run` when finalized.
 - **`player`** (ulong on all events): Steam64 ID of the session owner — equal to `NetId`, stable per account across runs. Use to partition events by user at an ingest server. On events with an explicit actor (`card_*`, `potion_use`, `orb_channeled`, `stars_gained`) `player` is that actor's ID; in single-player the session owner and actor are always the same. On `relic_trigger`, `player` is the relic owner.
 - **Creature instance IDs** (`target`, `dealer`, `applier`, `monster`, `monsters[].id`, `targets[]`): `"{ModelId}:{CombatId}"` format (e.g. `"GREMLIN_NOB:2"`). `CombatId` is a uint assigned sequentially per combat — two enemies of the same type get different values. Scoped to the current encounter; the same `CombatId` value may recur in a different combat.
 - **`target`** (string or null on `card_play`, `potion_use`): creature instance ID of the target; `null` for untargeted/AOE effects. On `potion_use` specifically: the player's own creature instance ID for self-targeted potions (e.g. Block Potion), a monster instance ID for targeted potions (e.g. Fire Potion), and `null` for AOE potions (e.g. Explosive Ampoule).
@@ -128,6 +129,8 @@ Then build:
 - [ ] **`outcome: "defeat"` on `combat_end`**: Die in a combat and confirm the event is emitted with `outcome: "defeat"`. AutoSlay never loses, so this can't be verified automatically. The code path goes through `CombatManager.LoseCombat` → `LoseCombatPatch`.
 - [ ] **`from_flush: false` with a discard-synergy deck**: Play a run as Silent (pick up cards like Acrobatics, Calculated Gamble, Survivor, or the Gambling Chip relic) and confirm that explicit mid-combat discards emit `from_flush: false`. AutoSlay hasn't reliably produced these.
 - [ ] **`is_auto_play: false` on `card_play`**: AutoSlay drives all plays programmatically, so every play in an AutoSlay run is flagged as auto-play. Play a card manually in combat and confirm `is_auto_play: false` is emitted.
+- [x] **`run_id` present on every event**: Verified via AutoSlay — all 4,461 events in a full run carry matching `run_id`; zero lines missing the field.
+- [ ] **`run_id` stable across resume**: Start a run, save and quit mid-run, relaunch the game, continue the run to completion. Confirm: (a) the in-progress file was appended to (not overwritten), (b) no second `run_start` event appears, (c) all events share the same `run_id`, (d) the final file is named `{run_id}.expanded_run`.
 
 ### Future features
 - [x] **Player and monster state on `turn_start`**: Player HP/block/energy/powers and monster HP/block/powers/intents snapshotted at the start of each player turn. Combined with the existing delta events (`damage_dealt`, `block_gained`, `power_applied`) this gives full mid-turn reconstruction without the redundancy of a `turn_end` snapshot.
@@ -138,6 +141,9 @@ Then build:
 - [x] **No hardcoded install paths**: build tooling reads `STS2_DIR` from the environment; in-mod paths use game APIs exclusively.
 - [ ] **Configurable file suffix**: deferred — no clean in-game UI path without a working mod config library
 - [x] **Stream to a telemetry ingest server**: outputs routed to local file, remote server, or both via config file
+- [x] **Stable `run_id` on every event**: `RunManager.StartTime` used as run ID — stable across process restarts, enabling mid-run save/quit/resume without losing event continuity. `(player, run_id)` uniquely identifies a run.
+- [x] **Game version on `run_start`**: `game_version` field from `ReleaseInfoManager` lets consumers track schema/balance changes across game updates.
+- [x] **Card reward item ID**: `reward_taken` for cards now includes the specific card ID picked (was previously null).
 
 ### Configuring outputs
 

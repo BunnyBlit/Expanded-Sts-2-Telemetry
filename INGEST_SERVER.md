@@ -45,9 +45,9 @@ Every run produces exactly:
 - One `run_start` event (first event in the stream, before any room or combat events)
 - One `run_end` event (last event in the stream, after all combat and floor events)
 
-You can use `run_start.timestamp` as a logical run ID for correlation — it is the same value used to name the local `.expanded_run` file (`{timestamp}.expanded_run`).
+**Every event carries a `run_id` field** (long, Unix seconds) sourced from `RunManager.StartTime` — set when the run begins and reloaded from the save file if the player saves and quits mid-run. This means `run_id` is stable across process restarts: if a player pauses a run and resumes later, all events from both sessions share the same `run_id`. Use `(player, run_id)` as the composite key to identify a run.
 
-**There is no explicit `run_id` field on events.** For single-player, the stream is sequential so events arrive in run order. For multiplayer, if you expect concurrent runs from the same client, you will need to track run boundaries via `run_start` / `run_end` timestamps.
+`run_id` is also the stem of the local output files: `{run_id}.in_progress.expanded_run` while in progress, `{run_id}.expanded_run` once finalized — so file names and event fields are always consistent.
 
 ## Event format
 
@@ -55,6 +55,8 @@ Each event is a single JSON object. The mod emits events as compact (no-whitespa
 
 All events have:
 - `"event_type"`: string — the event name (see reference below)
+- `"player"`: ulong — Steam64 ID of the session owner (same as `NetId`), stable per account
+- `"run_id"`: long — Unix seconds start time of the run; stable across save/quit/resume. Use `(player, run_id)` as the composite run key.
 - `"timestamp"`: integer — Unix seconds UTC at emission time
 
 All other fields are event-specific.
@@ -76,13 +78,15 @@ All other fields are event-specific.
 ### Run lifecycle
 
 #### `run_start`
-First event of every run.
+First event of every run. Not re-emitted if the player saves, quits, and resumes — the mod appends to the existing file instead.
 ```json
-{"event_type":"run_start","player":76561197983754930,"game_version":"v0.103.2","timestamp":1776012547}
+{"event_type":"run_start","player":76561197983754930,"game_version":"v0.103.2","profile":1,"run_id":1776012547,"timestamp":1776012547}
 ```
 | Field | Type | Notes |
 |-------|------|-------|
 | `game_version` | string | game build version from `ReleaseInfoManager` (e.g. `"v0.103.2"`); `"dev"` for local/unversioned builds |
+| `profile` | int | active save profile (1, 2, or 3); players can have up to three profiles with separate progression |
+| `run_id` | long | equals `timestamp` on `run_start`; present on every event for easy partitioning |
 
 #### `run_end`
 Last event of every run.
@@ -380,8 +384,8 @@ shop_purchase       (if player buys something)
 
 ## Implementation notes
 
-- **Idempotency**: the mod has no retry logic, so duplicate delivery only happens if a `run_end` is lost and the game restarts the same run (rare). A simple unique index on `(run_start_timestamp, event_sequence_number)` handles this if needed; otherwise accepting duplicates is fine for analytics.
+- **Idempotency**: the mod has no retry logic, so duplicate delivery only happens if a `run_end` is lost and the game restarts the same run (rare). A simple unique index on `(player, run_id, event_sequence_number)` handles this if needed; otherwise accepting duplicates is fine for analytics.
 - **Partial runs**: if the game crashes, the final drain may not complete. You may receive events up to some point mid-run with no `run_end`. Handle this gracefully — treat runs without `run_end` as in-progress or abandoned.
 - **`turn:0` events**: valid and meaningful — covers combat setup before the first player turn (Defect starting orbs, relic block grants). Do not filter these out.
 - **`character` field on card events**: present on `card_draw`, `card_play`, `card_discard`, `card_exhaust`, `potion_use`, `orb_channeled`, `stars_gained` — the character model ID of the acting player. Useful for character-specific analysis without joining through `run_end`.
-- **Multiplayer**: `player` fields are NetId ulongs — unique per player in a co-op session. `num_players` on `run_end` indicates multiplayer runs.
+- **Multiplayer**: `player` fields are NetId ulong values — unique per player in a co-op session. `num_players` on `run_end` indicates multiplayer runs.
