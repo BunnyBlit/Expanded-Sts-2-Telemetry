@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,11 +25,20 @@ internal static class RemoteSender
     private static CancellationTokenSource? _cts;
     private static Task? _drainTask;
     private static int _droppedCount;
+    private static int _lastFailStatus; // HTTP status of last failure (0 = network error / last send OK)
+    private static int _failStreak;     // consecutive failures of the same kind, for log throttling
 
-    public static void Start(string serverUrl)
+    public static void Start(string serverUrl, string authToken)
     {
         if (_drainTask != null && !_drainTask.IsCompleted) return;
+        // Set (or clear) the bearer token on the shared client each run. The HttpClient
+        // is a long-lived singleton, so an explicit null clears a token from a prior run.
+        _http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(authToken)
+            ? null
+            : new AuthenticationHeaderValue("Bearer", authToken);
         _droppedCount = 0;
+        _lastFailStatus = 0;
+        _failStreak = 0;
         _cts = new CancellationTokenSource();
         _drainTask = Task.Run(() => DrainLoop(serverUrl, _cts.Token));
     }
@@ -81,11 +91,47 @@ internal static class RemoteSender
         try
         {
             var content = new StringContent(string.Join('\n', lines), Encoding.UTF8, "application/x-ndjson");
-            await _http.PostAsync(serverUrl, content);
+            using HttpResponseMessage resp = await _http.PostAsync(serverUrl, content);
+            if (resp.IsSuccessStatusCode)
+            {
+                NoteSuccess();
+                return;
+            }
+            int code = (int)resp.StatusCode;
+            string reason = code switch
+            {
+                401 or 403 => $"auth rejected (HTTP {code}) — check AuthToken/ServerUrl in expanded-telemetry.cfg",
+                >= 500     => $"server error (HTTP {code})",
+                _          => $"rejected (HTTP {code})",
+            };
+            NoteFailure(code, reason, lines.Count);
         }
         catch (Exception ex)
         {
-            Log.Warn($"[expanded-telemetry] Remote send failed — {lines.Count} events dropped: {ex.Message}");
+            NoteFailure(0, $"network error: {ex.Message}", lines.Count);
+        }
+    }
+
+    // Throttled failure logging. Logs the first failure of a given kind (HTTP status,
+    // or 0 for a network exception), then only every 100th consecutive failure of that
+    // same kind — so a persistently-down server or a bad token can't spam the log at the
+    // 200ms drain cadence. A successful send resets the streak, so the next failure (or a
+    // change to a different failure kind) logs immediately.
+    private static void NoteSuccess()
+    {
+        _lastFailStatus = 0;
+        _failStreak = 0;
+    }
+
+    private static void NoteFailure(int status, string reason, int dropped)
+    {
+        bool newKind = status != _lastFailStatus || _failStreak == 0;
+        _failStreak = newKind ? 1 : _failStreak + 1;
+        _lastFailStatus = status;
+        if (newKind || _failStreak % 100 == 0)
+        {
+            string suffix = _failStreak > 1 ? $" (x{_failStreak})" : "";
+            Log.Warn($"[expanded-telemetry] Remote send failed ({reason}) — {dropped} events dropped{suffix}");
         }
     }
 }

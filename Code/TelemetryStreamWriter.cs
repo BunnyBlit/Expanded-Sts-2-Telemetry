@@ -82,7 +82,7 @@ internal static class TelemetryStreamWriter
                 }
                 else
                 {
-                    RemoteSender.Start(config.ServerUrl);
+                    RemoteSender.Start(config.ServerUrl, config.AuthToken);
                 }
             }
 

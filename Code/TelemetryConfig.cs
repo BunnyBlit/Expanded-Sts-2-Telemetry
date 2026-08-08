@@ -18,6 +18,11 @@ internal class TelemetryConfig
     // Events are batched and sent every ~200ms. Failures drop events, never block gameplay.
     public string ServerUrl { get; set; } = "";
 
+    // Optional bearer token. When non-empty, every request carries
+    // `Authorization: Bearer <AuthToken>`. Leave empty for no auth.
+    // NOTE: stored in plaintext in this config file (game user-data dir, not the repo).
+    public string AuthToken { get; set; } = "";
+
     private static readonly JsonSerializerOptions _jsonOpts = new() { WriteIndented = true };
 
     public static TelemetryConfig Load()
@@ -38,7 +43,7 @@ internal class TelemetryConfig
                 Log.Warn("[expanded-telemetry] Config was empty/invalid, using defaults");
                 return new TelemetryConfig();
             }
-            Log.Info($"[expanded-telemetry] Config loaded: WriteToFile={config.WriteToFile} SendToServer={config.SendToServer} ServerUrl={(string.IsNullOrEmpty(config.ServerUrl) ? "(unset)" : config.ServerUrl)}");
+            Log.Info($"[expanded-telemetry] Config loaded: WriteToFile={config.WriteToFile} SendToServer={config.SendToServer} ServerUrl={(string.IsNullOrEmpty(config.ServerUrl) ? "(unset)" : config.ServerUrl)} AuthToken={(string.IsNullOrEmpty(config.AuthToken) ? "(unset)" : "(set)")}");
             return config;
         }
         catch (Exception ex)
