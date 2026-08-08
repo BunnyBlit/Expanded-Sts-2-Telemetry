@@ -17,6 +17,10 @@ internal static class EncounterCardTracker
 {
     private static readonly ConditionalWeakTable<ICombatState, string> _encounterIds = new();
     private static readonly ConditionalWeakTable<ICombatState, TurnCounter> _turnCounters = new();
+    // Marks combats whose combat_end has been written, so a stray second call can't
+    // double-emit now that the encounter mapping is no longer removed on combat end.
+    private static readonly ConditionalWeakTable<ICombatState, object> _ended = new();
+    private static readonly object Sentinel = new();
 
     public static void OnCombatStart(ICombatState combatState)
     {
@@ -119,11 +123,16 @@ internal static class EncounterCardTracker
 
     public static void OnCombatEnd(ICombatState combatState, string outcome)
     {
-        if (_encounterIds.TryGetValue(combatState, out string? encounterId))
-        {
-            TelemetryStreamWriter.WriteCombatEnd(encounterId, outcome);
-            _encounterIds.Remove(combatState);
-            _turnCounters.Remove(combatState);
-        }
+        if (!_encounterIds.TryGetValue(combatState, out string? encounterId)) return;
+        // Write combat_end at most once per combat. This guard replaces the old
+        // "remove the mapping" approach, which dropped post-victory relic triggers:
+        // relics like Burning Blood flash in Hook.AfterCombatVictory, which fires
+        // AFTER Hook.AfterCombatEnd (where this runs), so OnRelicTriggered still needs
+        // the encounter/turn mapping to resolve. We therefore keep the mappings and
+        // let the ConditionalWeakTable GC-evict them once the CombatState is collected
+        // (no leak — that is exactly why a CWT is used).
+        if (_ended.TryGetValue(combatState, out _)) return;
+        _ended.Add(combatState, Sentinel);
+        TelemetryStreamWriter.WriteCombatEnd(encounterId, outcome);
     }
 }
