@@ -4,4 +4,4 @@
 obj/
 logs/
 bin/
-
+.env
