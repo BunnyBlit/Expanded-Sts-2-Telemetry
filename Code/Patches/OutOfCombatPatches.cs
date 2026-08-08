@@ -31,9 +31,12 @@ public static class AfterRoomEnteredPatch
 
         // Emit shop_offered immediately after room_entered to guarantee ordering.
         // MerchantInventory is fully populated by the time AfterRoomEntered fires.
+        // The Aug 2026 update made shops per-player (MerchantRoom.Inventories); we report
+        // the local player's shop via GetLocalInventory(). CardEntries still exists as a
+        // convenience over the new CharacterCardEntries + ColorlessCardEntries split.
         if (room is MerchantRoom merchantRoom)
         {
-            var inventory = merchantRoom.Inventory;
+            var inventory = merchantRoom.GetLocalInventory();
             var items = new List<ShopItemSummary>();
             foreach (var card in inventory.CardEntries)
                 if (card.CreationResult?.Card.Id.Entry is string cardId)
@@ -155,7 +158,15 @@ public static class ShopPurchasePatch
 
 // RelicReward._relic is private — access via cached reflection for rewards_offered.
 // CardReward card list is captured here for diffing in RewardTakenPatch.
-[HarmonyPatch(typeof(Hook), nameof(Hook.BeforeRewardsOffered))]
+//
+// Hook.BeforeRewardsOffered was removed in the Aug 2026 game update. We now patch
+// Hook.ModifyRewards — a synchronous hook fired from RewardsSet.GenerateWithoutOffering()
+// AFTER the reward list is built and modifiers have mutated it in place, so the Postfix
+// sees the final list. Caveat: GenerateWithoutOffering() also runs on the non-offering
+// paths (RewardsCmd.GenerateForRoomEnd / GenerateCustom), so in principle this can fire
+// for rewards that are never shown. Normal combat/treasure rewards go through
+// OfferForRoomEnd → Offer → GenerateWithoutOffering, firing exactly once per screen.
+[HarmonyPatch(typeof(Hook), nameof(Hook.ModifyRewards))]
 public static class RewardsOfferedPatch
 {
     private static readonly FieldInfo _relicField =
@@ -163,7 +174,7 @@ public static class RewardsOfferedPatch
 
     internal static readonly ConditionalWeakTable<CardReward, List<string>> CardSnapshot = new();
 
-    public static void Postfix(IRunState runState, Player player, IReadOnlyList<Reward> rewards)
+    public static void Postfix(IRunState runState, Player player, List<Reward> rewards)
     {
         TelemetryStreamWriter.Open();
         var summaries = new List<RewardSummary>();

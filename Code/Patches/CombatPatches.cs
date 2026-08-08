@@ -22,7 +22,7 @@ namespace ExpandedTelemetry;
 [HarmonyPatch(typeof(Hook), nameof(Hook.BeforeCombatStart))]
 public static class BeforeCombatStartPatch
 {
-    public static void Prefix(IRunState runState, CombatState? combatState)
+    public static void Prefix(IRunState runState, ICombatState? combatState)
     {
         Log.Info("[expanded-telemetry] BeforeCombatStartPatch");
         TelemetryStreamWriter.Open();
@@ -34,7 +34,7 @@ public static class BeforeCombatStartPatch
 [HarmonyPatch(typeof(CombatHistory), nameof(CombatHistory.CardPlayStarted))]
 public static class CardPlayStartedPatch
 {
-    public static void Postfix(CombatState combatState, CardPlay cardPlay)
+    public static void Postfix(ICombatState combatState, CardPlay cardPlay)
     {
         Log.Info($"[expanded-telemetry] After card play {cardPlay.Card.Id}");
         if (cardPlay.Card.Owner != null)
@@ -49,7 +49,7 @@ public static class CardPlayStartedPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterCardChangedPiles))]
 public static class CardChangedPilesPatch
 {
-    public static void Postfix(CombatState? combatState, CardModel card, PileType oldPile)
+    public static void Postfix(ICombatState? combatState, CardModel card, PileType oldPile)
     {
         if (combatState == null) return;
         if (oldPile != PileType.Hand) return;
@@ -64,7 +64,7 @@ public static class CardChangedPilesPatch
 [HarmonyPatch(typeof(CombatHistory), nameof(CombatHistory.CardDrawn))]
 public static class CardDrawnPatch
 {
-    public static void Postfix(CombatState combatState, CardModel card, bool fromHandDraw)
+    public static void Postfix(ICombatState combatState, CardModel card, bool fromHandDraw)
     {
         Log.Info($"[expanded-telemetry] After card draw {card.Id}");
         if (card.Owner != null)
@@ -75,7 +75,7 @@ public static class CardDrawnPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterCardExhausted))]
 public static class CardExhaustedPatch
 {
-    public static void Postfix(CombatState combatState, CardModel card, bool causedByEthereal)
+    public static void Postfix(ICombatState combatState, CardModel card, bool causedByEthereal)
     {
         if (card.Owner == null) return;
         Log.Info($"[expanded-telemetry] Card exhausted (fromEthereal={causedByEthereal}): {card.Id}");
@@ -86,7 +86,7 @@ public static class CardExhaustedPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterPotionUsed))]
 public static class PotionUsedPatch
 {
-    public static void Postfix(CombatState? combatState, PotionModel potion, Creature? target)
+    public static void Postfix(ICombatState? combatState, PotionModel potion, Creature? target)
     {
         if (combatState == null) return;
         if (potion.Owner == null) return;
@@ -100,7 +100,7 @@ public static class PotionUsedPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.BeforeSideTurnStart))]
 public static class BeforeSideTurnStartPatch
 {
-    public static void Postfix(CombatState combatState, CombatSide side)
+    public static void Postfix(ICombatState combatState, CombatSide side)
     {
         if (side != CombatSide.Player) return;
         Log.Info("[expanded-telemetry] Player turn started");
@@ -112,7 +112,7 @@ public static class BeforeSideTurnStartPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterTurnEnd))]
 public static class AfterTurnEndPatch
 {
-    public static void Postfix(CombatState combatState, CombatSide side)
+    public static void Postfix(ICombatState combatState, CombatSide side)
     {
         if (side != CombatSide.Player) return;
         Log.Info("[expanded-telemetry] Player turn ended");
@@ -125,7 +125,7 @@ public static class AfterTurnEndPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterCombatEnd))]
 public static class AfterCombatEndPatch
 {
-    public static void Prefix(IRunState runState, CombatState? combatState, CombatRoom room)
+    public static void Prefix(IRunState runState, ICombatState? combatState, CombatRoom room)
     {
         Log.Info("[expanded-telemetry] After combat ended (victory)");
         if (combatState != null)
@@ -142,7 +142,7 @@ public static class LoseCombatPatch
     public static void Prefix()
     {
         if (CombatManager.Instance.IsAboutToLose) return; // already registered, skip
-        CombatState? combatState = CombatManager.Instance.DebugOnlyGetState();
+        ICombatState? combatState = CombatManager.Instance.DebugOnlyGetState();
         if (combatState == null) return;
         Log.Info("[expanded-telemetry] Combat lost (defeat)");
         EncounterCardTracker.OnCombatEnd(combatState, "defeat");
@@ -171,7 +171,7 @@ public static class CreateRunHistoryEntryPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterPowerAmountChanged))]
 public static class AfterPowerAmountChangedPatch
 {
-    public static void Postfix(CombatState combatState, PowerModel power, decimal amount, Creature? applier)
+    public static void Postfix(ICombatState combatState, PowerModel power, decimal amount, Creature? applier)
     {
         Log.Info($"[expanded-telemetry] Power amount changed: {power.Id.Entry} on {power.Owner.ModelId.Entry} by {(int)amount}");
         EncounterCardTracker.OnPowerAmountChanged(combatState, power.Id.Entry, TelemetryStreamWriter.CreatureId(power.Owner), applier == null ? null : TelemetryStreamWriter.CreatureId(applier), (int)amount);
@@ -181,7 +181,7 @@ public static class AfterPowerAmountChangedPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterDamageReceived))]
 public static class AfterDamageReceivedPatch
 {
-    public static void Postfix(CombatState? combatState, Creature target, DamageResult result, Creature? dealer)
+    public static void Postfix(ICombatState? combatState, Creature target, DamageResult result, Creature? dealer)
     {
         if (combatState == null) return;
         EncounterCardTracker.OnDamageReceived(combatState, TelemetryStreamWriter.CreatureId(target), dealer == null ? null : TelemetryStreamWriter.CreatureId(dealer), result.UnblockedDamage, result.BlockedDamage, result.OverkillDamage);
@@ -191,7 +191,7 @@ public static class AfterDamageReceivedPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterBlockGained))]
 public static class AfterBlockGainedPatch
 {
-    public static void Postfix(CombatState combatState, Creature creature, decimal amount)
+    public static void Postfix(ICombatState combatState, Creature creature, decimal amount)
     {
         EncounterCardTracker.OnBlockGained(combatState, TelemetryStreamWriter.CreatureId(creature), (int)amount);
     }
@@ -200,7 +200,7 @@ public static class AfterBlockGainedPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterOrbChanneled))]
 public static class AfterOrbChanneledPatch
 {
-    public static void Postfix(CombatState combatState, Player player, OrbModel orb)
+    public static void Postfix(ICombatState combatState, Player player, OrbModel orb)
     {
         EncounterCardTracker.OnOrbChanneled(combatState, player.NetId, player.Character.Id.Entry, orb.Id.Entry);
     }
@@ -209,7 +209,7 @@ public static class AfterOrbChanneledPatch
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterStarsGained))]
 public static class AfterStarsGainedPatch
 {
-    public static void Postfix(CombatState combatState, int amount, Player gainer)
+    public static void Postfix(ICombatState combatState, int amount, Player gainer)
     {
         EncounterCardTracker.OnStarsGained(combatState, gainer.NetId, gainer.Character.Id.Entry, amount);
     }
@@ -222,7 +222,7 @@ public static class RelicFlashPatch
 {
     public static void Postfix(RelicModel __instance, IEnumerable<Creature> targets)
     {
-        CombatState? combatState = CombatManager.Instance.DebugOnlyGetState();
+        ICombatState? combatState = CombatManager.Instance.DebugOnlyGetState();
         if (combatState == null) return;
         var targetIds = targets.Select(t => TelemetryStreamWriter.CreatureId(t)).ToList();
         Log.Info($"[expanded-telemetry] Relic triggered: {__instance.Id.Entry}");
@@ -235,7 +235,7 @@ public static class RelicFlashPatch
 [HarmonyPatch(typeof(CombatHistory), nameof(CombatHistory.MonsterPerformedMove))]
 public static class MonsterPerformedMovePatch
 {
-    public static void Postfix(CombatState combatState, MonsterModel monster, MoveState move, IEnumerable<Creature>? targets)
+    public static void Postfix(ICombatState combatState, MonsterModel monster, MoveState move, IEnumerable<Creature>? targets)
     {
         var intents = move.Intents.Select(i => i.IntentType.ToString()).ToList();
         var targetIds = targets?.Select(t => TelemetryStreamWriter.CreatureId(t)).ToList() ?? [];
