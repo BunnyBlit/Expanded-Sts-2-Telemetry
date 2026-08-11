@@ -34,6 +34,7 @@ internal static class TelemetryStreamWriter
     private static bool _sendToServer;
     private static ulong _localPlayerId;
     private static long _runId;                  // Unix seconds — run start time; used for file naming + resume
+    private static int _ascension;               // ascension level of the run; emitted on run_start
     private static string _runUuid = "";         // v5 UUID derived from _runId — emitted as run_id
     private static string _localPlayerUuid = ""; // v5 UUID derived from _localPlayerId — emitted as player_id
     private static long _seq;                     // per-run monotonic sequence, breaks same-second ties downstream
@@ -80,7 +81,9 @@ internal static class TelemetryStreamWriter
             _localPlayerId = PlatformUtil.GetLocalPlayerId(PlatformUtil.PrimaryPlatform);
             _writeToFile = config.WriteToFile;
             _sendToServer = config.SendToServer;
-            _runId = RunManager.Instance.ToSave(null).StartTime;
+            var runSave = RunManager.Instance.ToSave(null);
+            _runId = runSave.StartTime;
+            _ascension = runSave.Ascension;
             _localPlayerUuid = TelemetryId.Player(_localPlayerId);
             _runUuid = TelemetryId.Run(_runId);
             _seq = 0;
@@ -135,7 +138,7 @@ internal static class TelemetryStreamWriter
             {
                 string gameVersion = ReleaseInfoManager.Instance.ReleaseInfo?.Version ?? "dev";
                 int profileId = SaveManager.Instance.CurrentProfileId;
-                WriteEvent(new { event_id = NewEventId, seq_num = NextSeq(), event_type = "run_start", player_id = _localPlayerUuid, game_version = gameVersion, profile = profileId, run_id = _runUuid, timestamp = Now });
+                WriteEvent(new { event_id = NewEventId, seq_num = NextSeq(), event_type = "run_start", player_id = _localPlayerUuid, game_version = gameVersion, profile = profileId, ascension = _ascension, run_id = _runUuid, timestamp = Now });
             }
         }
         catch (Exception ex)
