@@ -138,7 +138,13 @@ internal static class TelemetryStreamWriter
             {
                 string gameVersion = ReleaseInfoManager.Instance.ReleaseInfo?.Version ?? "dev";
                 int profileId = SaveManager.Instance.CurrentProfileId;
-                WriteEvent(new { event_id = NewEventId, seq_num = NextSeq(), event_type = "run_start", player_id = _localPlayerUuid, game_version = gameVersion, profile = profileId, ascension = _ascension, run_id = _runUuid, timestamp = Now });
+                // Local player + roster are fixed before the first room is entered (RunState is
+                // built at character-select and passed into RunManager setup), so character/count
+                // are stable here — same source and resolution as run_end (CreateRunHistoryEntryPatch).
+                var localPlayer = runSave.Players.Find(p => p.NetId == _localPlayerId) ?? runSave.Players[0];
+                string character = localPlayer.CharacterId?.Entry ?? string.Empty;
+                int numPlayers = runSave.Players.Count;
+                WriteEvent(new { event_id = NewEventId, seq_num = NextSeq(), event_type = "run_start", player_id = _localPlayerUuid, game_version = gameVersion, profile = profileId, ascension = _ascension, character, num_players = numPlayers, run_id = _runUuid, timestamp = Now });
             }
         }
         catch (Exception ex)

@@ -77,7 +77,7 @@ Creature instance IDs (`target`, `dealer`, `applier`, `monster`, `monsters[].id`
 
 | Event | Extra fields |
 |-------|-------------|
-| `run_start` | `game_version` (string — from `ReleaseInfoManager.Instance.ReleaseInfo?.Version`, falls back to `"dev"` for local builds), `profile` (int, 1–3 — `SaveManager.Instance.CurrentProfileId`), `ascension` (int — `RunManager.Instance.ToSave(null).Ascension`, same source as `run_end.ascension`) |
+| `run_start` | `game_version` (string — from `ReleaseInfoManager.Instance.ReleaseInfo?.Version`, falls back to `"dev"` for local builds), `profile` (int, 1–3 — `SaveManager.Instance.CurrentProfileId`), `ascension` (int — `RunManager.Instance.ToSave(null).Ascension`, same source as `run_end.ascension`), `character` (string — local player's `CharacterId.Entry`, resolved from `runSave.Players` the same way `run_end` does; `""` if unset), `num_players` (int — `runSave.Players.Count`, same source as `run_end.num_players`) |
 | `room_entered` | `room_type` (RoomType enum string), `floor` (int), `act` (int, 1-based), `player_id` (v5 UUID) |
 | `combat_start` | `encounter`, `player_id` |
 | `turn_start` | `encounter`, `turn`, `player_id`, `players` (array — each: `player_id` (v5 UUID), `character`, `hp`, `max_hp`, `block`, `energy`, `max_energy`, `powers[]` `{power, amount}`), `monsters` (array — each: `id` (creature instance ID), `hp`, `max_hp`, `block`, `powers[]` `{power, amount}`, `intents[]` `{type}`) |
