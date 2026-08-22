@@ -2,21 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Build & Deploy
+## Build, Deploy & Package
+
+The publishing flow is split into three separable steps, each a distinct MSBuild target with a thin shell wrapper. **Deploy** and **Package** both `DependsOnTargets="Build"`, so each always acts on a freshly-compiled DLL. A plain build does **not** copy anything.
 
 ```bash
-# Build and auto-install DLL to game mods folder
-./deploy.sh                  # runs: dotnet build -c Debug
+# 1. Build only — compile, no copy       (dotnet build -c Debug)
+scripts/build.sh
+
+# 2. Deploy — fresh Debug build, install into the game's mods/expanded-telemetry/
+scripts/deploy.sh            # dotnet build -c Debug -t:Deploy
+
+# 3. Package — fresh Release build, zip a release artifact to dist/
+scripts/package.sh          # dotnet build -c Release -t:Package
+                            # -> dist/expanded-telemetry-<version>.zip (upload to ModsNexus / GitHub release)
 
 # Copy game log locally for inspection
-./fetch-log.sh
+scripts/fetch-log.sh
 ```
 
-Requires the `STS2_DIR` environment variable pointing to the folder containing `sts2.dll`. Set it once in your shell profile — the `.csproj` reads it directly via MSBuild's env var support and errors with a clear message if unset.
+The scripts live in `scripts/` and resolve the project root as one level up (`$(dirname "$0")/..`). All three build scripts require the `STS2_DIR` environment variable pointing to the folder containing `sts2.dll` (the `Build` they each depend on needs it to resolve the `sts2` reference). Set it once in your shell profile — the `.csproj` reads it directly via MSBuild's env var support and errors with a clear message if unset. Any extra args pass through to `dotnet build` (e.g. `scripts/deploy.sh -c Release`).
 
-The `.csproj` has a `CopyToModsFolderOnBuild` MSBuild target that automatically copies the compiled DLL and supporting files to the game's `mods/expanded-telemetry/` folder (derived from `STS2_DIR`).
+- **`Deploy`** copies the mod payload (DLL, `.deps.json`, `.runtimeconfig.json`, `.pdb` in Debug, `mod_manifest.json`, plus `mod_image.png`/`.pck` if present) to `mods/expanded-telemetry/`. The mods path is derived from `STS2_DIR` (macOS `.app`: `Contents/MacOS/mods`; Win/Linux: next to the game exe).
+- **`Package`** stages the same payload under a top-level `expanded-telemetry/` folder and zips it to `dist/expanded-telemetry-<version>.zip`, so extracting the zip into a `mods/` directory yields `mods/expanded-telemetry/`. The `<version>` is read from `mod_manifest.json` (single source of truth — bump it there). Release builds emit no `.pdb`, so the release zip ships without symbols. `dist/` is gitignored.
+- The shared `_CollectModPayload` target defines the exact file set once; both `Deploy` and `Package` reuse it.
 
-Hot-reload is available via MCP: use `watch_project` with `sts2-mcp-watch.json` config (1.5s debounce, auto-reload on file save).
+Hot-reload via the MCP watcher is currently **broken** (pending a rework of the in-game bridge/remote-control mod) — deploy manually with `scripts/deploy.sh` and restart the game for now.
 
 ## Architecture
 
@@ -81,16 +92,16 @@ Creature instance IDs (`target`, `dealer`, `applier`, `monster`, `monsters[].id`
 | `room_entered` | `room_type` (RoomType enum string), `floor` (int), `act` (int, 1-based), `player_id` (v5 UUID) |
 | `combat_start` | `encounter`, `player_id` |
 | `turn_start` | `encounter`, `turn`, `player_id`, `players` (array — each: `player_id` (v5 UUID), `character`, `hp`, `max_hp`, `block`, `energy`, `max_energy`, `powers[]` `{power, amount}`), `monsters` (array — each: `id` (creature instance ID), `hp`, `max_hp`, `block`, `powers[]` `{power, amount}`, `intents[]` `{type}`) |
-| `card_draw` | `encounter`, `card`, `player_id`, `from_hand_draw` (bool — true = start-of-turn draw, false = effect-triggered), `turn`, `upgrade_level` (int — 0 = base, 1 = upgraded) |
-| `card_play` | `encounter`, `card`, `player_id`, `target` (creature instance ID or null for untargeted), `turn`, `upgrade_level`, `is_auto_play` (bool — true = triggered by power/relic, false = played by player; **needs manual verification**) |
-| `card_discard` | `encounter`, `card`, `player_id`, `from_flush` (bool — true = end-of-turn hand flush, false = explicit/effect discard), `turn`, `upgrade_level` |
-| `card_exhaust` | `encounter`, `card`, `player_id`, `from_ethereal` (bool — true = Ethereal keyword auto-exhaust at end of turn, false = explicit card/power effect), `turn`, `upgrade_level` |
-| `potion_use` | `encounter`, `potion`, `player_id`, `target` (creature instance ID, player's own for self-targeted, null for untargeted/AOE), `turn` |
+| `card_draw` | `encounter`, `card`, `player_id`, `character`, `from_hand_draw` (bool — true = start-of-turn draw, false = effect-triggered), `turn`, `upgrade_level` (int — 0 = base, 1 = upgraded) |
+| `card_play` | `encounter`, `card`, `player_id`, `character`, `target` (creature instance ID or null for untargeted), `turn`, `upgrade_level`, `is_auto_play` (bool — true = triggered by power/relic, false = played by player; **needs manual verification**) |
+| `card_discard` | `encounter`, `card`, `player_id`, `character`, `from_flush` (bool — true = end-of-turn hand flush, false = explicit/effect discard), `turn`, `upgrade_level` |
+| `card_exhaust` | `encounter`, `card`, `player_id`, `character`, `from_ethereal` (bool — true = Ethereal keyword auto-exhaust at end of turn, false = explicit card/power effect), `turn`, `upgrade_level` |
+| `potion_use` | `encounter`, `potion`, `player_id`, `character`, `target` (creature instance ID, player's own for self-targeted, null for untargeted/AOE), `turn` |
 | `power_applied` | `encounter`, `power` (PowerModel id), `target` (creature instance ID), `applier` (nullable creature instance ID — null when power self-decrements), `amount` (int, negative for stack reductions), `turn`, `player_id` |
 | `damage_dealt` | `encounter`, `target` (creature instance ID), `dealer` (nullable creature instance ID), `hp_lost` (int), `blocked` (int), `overkill` (int), `turn`, `player_id` |
 | `block_gained` | `encounter`, `target` (creature instance ID), `amount` (int), `turn`, `player_id` |
-| `orb_channeled` | `encounter`, `player_id` (v5 UUID), `orb` (OrbModel id), `turn` — Defect only |
-| `stars_gained` | `encounter`, `player_id` (v5 UUID), `amount` (int), `turn` — stars characters only |
+| `orb_channeled` | `encounter`, `player_id` (v5 UUID), `character`, `orb` (OrbModel id), `turn` — Defect only |
+| `stars_gained` | `encounter`, `player_id` (v5 UUID), `character`, `amount` (int), `turn` — stars characters only |
 | `relic_trigger` | `encounter`, `relic` (RelicModel id), `player_id` (v5 UUID, relic owner), `targets` (list of creature instance IDs the flash targeted), `turn` |
 | `monster_action` | `encounter`, `monster` (creature instance ID), `move` (MoveState id), `intents` (list of IntentType strings), `targets` (list of creature instance IDs, empty if untargeted), `turn`, `player_id` |
 | `rewards_offered` | `rewards` (array of `{reward_type, item}` — `reward_type`: `"card"` / `"relic"` / `"potion"` / `"gold"`; `item`: card/relic/potion ID or gold amount string), `floor`, `player_id` |

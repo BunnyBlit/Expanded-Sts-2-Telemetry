@@ -14,10 +14,11 @@
     <!-- ModManager uses Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()), "mods"). Windows/Linux: next to game exe; macOS .app: Contents/MacOS/mods (NOT beside the .app bundle). -->
     <ModsPath Condition="'$(ModsPath)' == '' and '$(Sts2Dir)' != '' and $([MSBuild]::IsOSPlatform('OSX'))">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(Sts2Dir)', '..', '..', 'MacOS', 'mods'))))</ModsPath>
     <ModsPath Condition="'$(ModsPath)' == '' and '$(Sts2Dir)' != '' and !$([MSBuild]::IsOSPlatform('OSX'))">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(Sts2Dir)', '..', 'mods'))))</ModsPath>
-    <!-- Default off; Debug enables deploy to mods/ for MCP hot_reload_project / watch_project -->
-    <EnableCopyToModsFolderOnBuild Condition="'$(EnableCopyToModsFolderOnBuild)' == ''">false</EnableCopyToModsFolderOnBuild>
+    <!-- Where `dotnet build -t:Package` writes the distributable zip. -->
+    <DistDir>$(MSBuildProjectDirectory)\dist</DistDir>
   </PropertyGroup>
 
+  <!-- Only the plain build needs sts2.dll. Package/Deploy depend on Build, so this covers them too. -->
   <Target Name="CheckSts2Dir" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(Sts2Dir)' == ''"
            Text="STS2_DIR environment variable is not set. Export STS2_DIR pointing to the folder containing sts2.dll. See README for setup." />
@@ -26,7 +27,6 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <Optimize>false</Optimize>
     <DebugType>portable</DebugType>
-    <EnableCopyToModsFolderOnBuild>true</EnableCopyToModsFolderOnBuild>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -47,35 +47,60 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyToModsFolderOnBuild"
-          AfterTargets="PostBuildEvent"
-          Condition="'$(EnableCopyToModsFolderOnBuild)' == 'true' and '$(ModsPath)' != ''">
+  <!-- ============================================================================
+       Publishing flow: three explicit, separable steps.
+         1. Build   — `dotnet build`            (compile only; no copy)
+         2. Deploy  — `dotnet build -t:Deploy`  (local install into the game's mods/)
+         3. Package — `dotnet build -c Release -t:Package`  (zip a release artifact)
+       Deploy and Package both DependsOnTargets="Build", so each always installs/ships
+       a freshly-compiled DLL. deploy.sh / package.sh are thin wrappers over these.
+       ============================================================================ -->
+
+  <!-- The exact set of files that constitute the installable/distributable mod.
+       Runs after Build so $(TargetDir) outputs exist; both Deploy and Package reuse it. -->
+  <Target Name="_CollectModPayload" DependsOnTargets="Build">
+    <ItemGroup>
+      <ModPayload Include="$(TargetDir)$(TargetName).dll" />
+      <ModPayload Include="$(TargetDir)$(TargetName).deps.json" Condition="Exists('$(TargetDir)$(TargetName).deps.json')" />
+      <ModPayload Include="$(TargetDir)$(TargetName).runtimeconfig.json" Condition="Exists('$(TargetDir)$(TargetName).runtimeconfig.json')" />
+      <!-- Debug symbols: emitted in Debug (portable), suppressed in Release (DebugType=none). -->
+      <ModPayload Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+      <ModPayload Include="$(MSBuildProjectDirectory)\mod_manifest.json" />
+      <ModPayload Include="$(MSBuildProjectDirectory)\mod_image.png" Condition="Exists('$(MSBuildProjectDirectory)\mod_image.png')" />
+      <ModPayload Include="$(MSBuildProjectDirectory)\$(TargetName).pck" Condition="Exists('$(MSBuildProjectDirectory)\$(TargetName).pck')" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Local deploy: install the freshly-built payload into the game's mods/expanded-telemetry/. -->
+  <Target Name="Deploy" DependsOnTargets="Build;_CollectModPayload">
+    <Error Condition="'$(ModsPath)' == ''"
+           Text="ModsPath could not be resolved (is STS2_DIR set?). Cannot deploy to the game's mods folder." />
     <PropertyGroup>
-      <_ModOutputDir>$([System.IO.Path]::Combine('$(ModsPath)', '$(MSBuildProjectName)'))</_ModOutputDir>
+      <_ModOutputDir>$([System.IO.Path]::Combine('$(ModsPath)', '$(TargetName)'))</_ModOutputDir>
     </PropertyGroup>
-
     <MakeDir Directories="$(_ModOutputDir)" />
+    <Copy SourceFiles="@(ModPayload)" DestinationFolder="$(_ModOutputDir)" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="[expanded-telemetry] Deployed to $(_ModOutputDir)" />
+  </Target>
 
-    <Copy SourceFiles="$(TargetDir)$(TargetName).dll"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(TargetDir)$(TargetName).dll')" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).deps.json"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(TargetDir)$(TargetName).deps.json')" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).runtimeconfig.json"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(TargetDir)$(TargetName).runtimeconfig.json')" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\mod_manifest.json"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(MSBuildProjectDirectory)\mod_manifest.json')" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\mod_image.png"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(MSBuildProjectDirectory)\mod_image.png')" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\$(MSBuildProjectName).pck"
-          DestinationFolder="$(_ModOutputDir)"
-          Condition="Exists('$(MSBuildProjectDirectory)\$(MSBuildProjectName).pck')" />
+  <!-- Release packaging: stage the payload under a top-level expanded-telemetry/ folder and
+       zip it to dist/expanded-telemetry-<version>.zip. Extracting the zip into a mods/ folder
+       yields mods/expanded-telemetry/. Version is read from mod_manifest.json (single source). -->
+  <Target Name="Package" DependsOnTargets="Build;_CollectModPayload">
+    <PropertyGroup>
+      <ModVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\mod_manifest.json')), '&quot;version&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</ModVersion>
+      <_StageRoot>$(DistDir)\staging</_StageRoot>
+      <_StageDir>$(_StageRoot)\$(TargetName)</_StageDir>
+      <_ZipPath>$(DistDir)\$(TargetName)-$(ModVersion).zip</_ZipPath>
+    </PropertyGroup>
+    <Error Condition="'$(ModVersion)' == ''"
+           Text="Could not read &quot;version&quot; from mod_manifest.json — cannot name the package." />
+    <RemoveDir Directories="$(_StageRoot)" />
+    <MakeDir Directories="$(_StageDir)" />
+    <Copy SourceFiles="@(ModPayload)" DestinationFolder="$(_StageDir)" />
+    <Delete Files="$(_ZipPath)" Condition="Exists('$(_ZipPath)')" />
+    <ZipDirectory SourceDirectory="$(_StageRoot)" DestinationFile="$(_ZipPath)" Overwrite="true" />
+    <RemoveDir Directories="$(_StageRoot)" />
+    <Message Importance="high" Text="[expanded-telemetry] Packaged v$(ModVersion) -> $(_ZipPath)" />
   </Target>
 </Project>

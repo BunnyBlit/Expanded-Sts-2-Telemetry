@@ -112,12 +112,20 @@ $env:STS2_DIR = "C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2\
 export STS2_DIR="$HOME/.steam/steam/steamapps/common/Slay the Spire 2/SlayTheSpire2_Data/Managed"
 ```
 
-Then build:
+The publishing flow lives in `scripts/` and is split into three separable steps. **Deploy** and **Package** each depend on a fresh `Build`, so they always act on a freshly-compiled DLL; a plain build copies nothing.
 
 ```bash
-./deploy.sh       # dotnet build -c Debug + auto-copies DLL to game mods folder
-./fetch-log.sh    # copies the game log to logs/godot.log for inspection
+scripts/build.sh      # 1. Compile only (dotnet build -c Debug) — no copy, no zip
+scripts/deploy.sh     # 2. Fresh Debug build, then install into the game's mods/expanded-telemetry/
+scripts/package.sh    # 3. Fresh Release build, then zip a release artifact to dist/
+scripts/fetch-log.sh  # copies the game log to logs/godot.log for inspection
 ```
+
+- **`build.sh`** — runs the MSBuild `Build` target. Compiles to `bin/Debug/`; nothing leaves the repo. Pass `-c Release` (or any `dotnet build` args) to override.
+- **`deploy.sh`** — runs the `Deploy` target (`dotnet build -c Debug -t:Deploy`). Copies the mod payload (DLL, `.deps.json`, `.runtimeconfig.json`, `.pdb`, `mod_manifest.json`, plus `mod_image.png` / `.pck` if present) into `mods/expanded-telemetry/`, derived from `STS2_DIR`. This is the day-to-day "install into the game" command.
+- **`package.sh`** — runs the `Package` target (`dotnet build -c Release -t:Package`). Stages the payload under a top-level `expanded-telemetry/` folder and zips it to `dist/expanded-telemetry-<version>.zip`, where `<version>` is read from `mod_manifest.json`. Extracting the zip into a `mods/` directory yields `mods/expanded-telemetry/`, so it's ready to upload to ModsNexus or attach to a GitHub release. Release builds ship without a `.pdb`. `dist/` is gitignored.
+
+All three require `STS2_DIR` (the `Build` they depend on needs it to resolve the `sts2` reference) and will error clearly if it's unset. Bump the mod version in `mod_manifest.json` — it's the single source of truth for the package filename.
 
 ## Tools built
 
