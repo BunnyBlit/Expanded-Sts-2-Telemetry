@@ -120,6 +120,7 @@ scripts/deploy.sh     # 2. Fresh Debug build, then install into the game's mods/
 scripts/package.sh    # 3. Fresh Release build, then zip a release artifact to dist/
 scripts/fetch-log.sh  # copies the game log to logs/godot.log for inspection
 scripts/decompile.sh  # decompiles the local sts2.dll into decompiled/ for code reference
+scripts/extract-assets.sh  # extracts the game's packed Godot assets (.pck) into extracted_assets/
 ```
 
 - **`build.sh`** — runs the MSBuild `Build` target. Compiles to `bin/Debug/`; nothing leaves the repo. Pass `-c Release` (or any `dotnet build` args) to override.
@@ -129,6 +130,19 @@ scripts/decompile.sh  # decompiles the local sts2.dll into decompiled/ for code 
 All three require `STS2_DIR` (the `Build` they depend on needs it to resolve the `sts2` reference) and will error clearly if it's unset. Bump the mod version in `mod_manifest.json` — it's the single source of truth for the package filename.
 
 **`decompile.sh`** decompiles the game's `sts2.dll` (from `STS2_DIR`) into `decompiled/` using `ilspycmd` in project mode — a namespace-folder layout plus `sts2.csproj`, handy for reading game internals when writing Harmony patches. It wipes `decompiled/` first so nothing stale survives a game update. `decompiled/` is gitignored (large and game-version-specific); regenerate it after each Steam auto-update and diff to spot what the patch changed. Requires `ilspycmd` — install with `dotnet tool install -g ilspycmd` (the script also finds it in `~/.dotnet/tools` if it isn't on your `PATH`).
+
+**`extract-assets.sh`** extracts the game's packed Godot assets — the ~1.9GB `.pck` holding textures, audio, scenes, fonts, and GDScript — using [GDRE Tools](https://github.com/GDRETools/gdsdecomp) (`gdsdecomp`). It's the Godot-asset counterpart to `decompile.sh` (which handles the C# side).
+
+```bash
+scripts/extract-assets.sh                              # extract ALL files -> extracted_assets/ (12k+ files, slow)
+scripts/extract-assets.sh --include=res://**/*.png     # narrow with a glob (recommended)
+scripts/extract-assets.sh --recover                    # full project recovery -> recovered_project/
+scripts/extract-assets.sh --clean --include=...        # wipe the output dir first
+```
+
+Default mode dumps raw files to `extracted_assets/`. `--recover` performs a full project recovery into `recovered_project/` — additionally decompiling GDScript (`.gdc` → `.gd`) and converting binary resources (`.scn`/`.res` → `.tscn`/`.tres`). Any extra arguments pass straight through to GDRE (e.g. `--include=`, `--exclude=`, `--scripts-only`). Both output dirs are gitignored.
+
+The script finds the `.pck` next to `STS2_DIR` (override with the `STS2_PCK` env var) and locates the GDRE binary via `GDRE_TOOLS_PATH` (point it at the binary or the `.app` bundle) → your `PATH` → `/Applications`. **GDRE Tools is not bundled** — download a release from https://github.com/GDRETools/gdsdecomp/releases, or let the modding MCP fetch it with `python -m sts2mcp.setup`, then set `GDRE_TOOLS_PATH`.
 
 ## Tools built
 

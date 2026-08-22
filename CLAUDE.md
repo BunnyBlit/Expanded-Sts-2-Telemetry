@@ -22,6 +22,9 @@ scripts/fetch-log.sh
 
 # Decompile the local sts2.dll into decompiled/ for code reference (gitignored)
 scripts/decompile.sh
+
+# Extract the game's packed Godot assets (.pck) into extracted_assets/ (gitignored)
+scripts/extract-assets.sh --include=res://**/*.png   # narrow with a glob; bare run = everything
 ```
 
 The scripts live in `scripts/` and resolve the project root as one level up (`$(dirname "$0")/..`). All three build scripts require the `STS2_DIR` environment variable pointing to the folder containing `sts2.dll` (the `Build` they each depend on needs it to resolve the `sts2` reference). Set it once in your shell profile — the `.csproj` reads it directly via MSBuild's env var support and errors with a clear message if unset. Any extra args pass through to `dotnet build` (e.g. `scripts/deploy.sh -c Release`).
@@ -30,6 +33,7 @@ The scripts live in `scripts/` and resolve the project root as one level up (`$(
 - **`Package`** stages the same payload under a top-level `expanded-telemetry/` folder and zips it to `dist/expanded-telemetry-<version>.zip`, so extracting the zip into a `mods/` directory yields `mods/expanded-telemetry/`. The `<version>` is read from `mod_manifest.json` (single source of truth — bump it there). Release builds emit no `.pdb`, so the release zip ships without symbols. `dist/` is gitignored.
 - The shared `_CollectModPayload` target defines the exact file set once; both `Deploy` and `Package` reuse it.
 - **`scripts/decompile.sh`** decompiles the local `sts2.dll` (from `STS2_DIR`) into `decompiled/` via `ilspycmd --project` — a namespace-folder layout plus `sts2.csproj`, the same structure the modding MCP produces. It wipes `decompiled/` first so a type removed in a game update can't linger. `decompiled/` is gitignored (large, game-version-specific); regenerate after each Steam auto-update, then diff to see what the patch changed. Needs `ilspycmd` (`dotnet tool install -g ilspycmd`); the script also finds it in `~/.dotnet/tools` if it isn't on `PATH`.
+- **`scripts/extract-assets.sh`** extracts the game's packed Godot assets (the ~1.9GB `.pck`) using **GDRE Tools** (`gdsdecomp`) — the Godot-asset counterpart to `decompile.sh`. Default mode dumps raw files to `extracted_assets/`; `--recover` does a full project recovery to `recovered_project/` (also decompiles GDScript `.gdc`→`.gd` and converts `.scn`/`.res`→`.tscn`/`.tres`); `--clean` wipes the output dir first. A bare run extracts all 12k+ files, so narrow it with a pass-through glob, e.g. `--include=res://**/*.png`. It finds the `.pck` near `STS2_DIR` (override with `STS2_PCK`) and locates the GDRE binary via `GDRE_TOOLS_PATH` (binary or `.app` bundle) → `PATH` → `/Applications`. GDRE isn't bundled — install from https://github.com/GDRETools/gdsdecomp/releases (or the modding MCP's `python -m sts2mcp.setup` downloads it). Both output dirs are gitignored.
 
 Hot-reload via the MCP watcher is currently **broken** (pending a rework of the in-game bridge/remote-control mod) — deploy manually with `scripts/deploy.sh` and restart the game for now.
 
