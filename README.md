@@ -119,6 +119,7 @@ scripts/build.sh      # 1. Compile only (dotnet build -c Debug) — no copy, no 
 scripts/deploy.sh     # 2. Fresh Debug build, then install into the game's mods/expanded-telemetry/
 scripts/package.sh    # 3. Fresh Release build, then zip a release artifact to dist/
 scripts/fetch-log.sh  # copies the game log to logs/godot.log for inspection
+scripts/decompile.sh  # decompiles the local sts2.dll into decompiled/ for code reference
 ```
 
 - **`build.sh`** — runs the MSBuild `Build` target. Compiles to `bin/Debug/`; nothing leaves the repo. Pass `-c Release` (or any `dotnet build` args) to override.
@@ -126,6 +127,8 @@ scripts/fetch-log.sh  # copies the game log to logs/godot.log for inspection
 - **`package.sh`** — runs the `Package` target (`dotnet build -c Release -t:Package`). Stages the payload under a top-level `expanded-telemetry/` folder and zips it to `dist/expanded-telemetry-<version>.zip`, where `<version>` is read from `mod_manifest.json`. Extracting the zip into a `mods/` directory yields `mods/expanded-telemetry/`, so it's ready to upload to ModsNexus or attach to a GitHub release. Release builds ship without a `.pdb`. `dist/` is gitignored.
 
 All three require `STS2_DIR` (the `Build` they depend on needs it to resolve the `sts2` reference) and will error clearly if it's unset. Bump the mod version in `mod_manifest.json` — it's the single source of truth for the package filename.
+
+**`decompile.sh`** decompiles the game's `sts2.dll` (from `STS2_DIR`) into `decompiled/` using `ilspycmd` in project mode — a namespace-folder layout plus `sts2.csproj`, handy for reading game internals when writing Harmony patches. It wipes `decompiled/` first so nothing stale survives a game update. `decompiled/` is gitignored (large and game-version-specific); regenerate it after each Steam auto-update and diff to spot what the patch changed. Requires `ilspycmd` — install with `dotnet tool install -g ilspycmd` (the script also finds it in `~/.dotnet/tools` if it isn't on your `PATH`).
 
 ## Tools built
 

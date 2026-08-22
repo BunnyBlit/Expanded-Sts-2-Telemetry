@@ -19,6 +19,9 @@ scripts/package.sh          # dotnet build -c Release -t:Package
 
 # Copy game log locally for inspection
 scripts/fetch-log.sh
+
+# Decompile the local sts2.dll into decompiled/ for code reference (gitignored)
+scripts/decompile.sh
 ```
 
 The scripts live in `scripts/` and resolve the project root as one level up (`$(dirname "$0")/..`). All three build scripts require the `STS2_DIR` environment variable pointing to the folder containing `sts2.dll` (the `Build` they each depend on needs it to resolve the `sts2` reference). Set it once in your shell profile — the `.csproj` reads it directly via MSBuild's env var support and errors with a clear message if unset. Any extra args pass through to `dotnet build` (e.g. `scripts/deploy.sh -c Release`).
@@ -26,6 +29,7 @@ The scripts live in `scripts/` and resolve the project root as one level up (`$(
 - **`Deploy`** copies the mod payload (DLL, `.deps.json`, `.runtimeconfig.json`, `.pdb` in Debug, `mod_manifest.json`, plus `mod_image.png`/`.pck` if present) to `mods/expanded-telemetry/`. The mods path is derived from `STS2_DIR` (macOS `.app`: `Contents/MacOS/mods`; Win/Linux: next to the game exe).
 - **`Package`** stages the same payload under a top-level `expanded-telemetry/` folder and zips it to `dist/expanded-telemetry-<version>.zip`, so extracting the zip into a `mods/` directory yields `mods/expanded-telemetry/`. The `<version>` is read from `mod_manifest.json` (single source of truth — bump it there). Release builds emit no `.pdb`, so the release zip ships without symbols. `dist/` is gitignored.
 - The shared `_CollectModPayload` target defines the exact file set once; both `Deploy` and `Package` reuse it.
+- **`scripts/decompile.sh`** decompiles the local `sts2.dll` (from `STS2_DIR`) into `decompiled/` via `ilspycmd --project` — a namespace-folder layout plus `sts2.csproj`, the same structure the modding MCP produces. It wipes `decompiled/` first so a type removed in a game update can't linger. `decompiled/` is gitignored (large, game-version-specific); regenerate after each Steam auto-update, then diff to see what the patch changed. Needs `ilspycmd` (`dotnet tool install -g ilspycmd`); the script also finds it in `~/.dotnet/tools` if it isn't on `PATH`.
 
 Hot-reload via the MCP watcher is currently **broken** (pending a rework of the in-game bridge/remote-control mod) — deploy manually with `scripts/deploy.sh` and restart the game for now.
 
