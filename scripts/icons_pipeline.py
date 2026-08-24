@@ -122,6 +122,12 @@ SETS = [
         "category": "ui", "kind": "dir", "dir": "images/packed/common_ui", "recursive": False,
         "fields": [], "keep_filename": True,
     },
+    {
+        # Inline game-concept glyphs used in text: star_icon (Regent's stars -> stars_gained),
+        # per-character *_energy_icon, plus gold/card/potion/chest. Named by function.
+        "category": "resources", "kind": "dir", "dir": "images/packed/sprite_fonts", "recursive": False,
+        "fields": [], "keep_filename": True,
+    },
 ]
 
 # ---------------------------------------------------------------------------------------

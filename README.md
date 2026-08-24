@@ -122,6 +122,7 @@ scripts/fetch-log.sh  # copies the game log to logs/godot.log for inspection
 scripts/decompile.sh  # decompiles the local sts2.dll into decompiled/ for code reference
 scripts/extract-assets.sh  # extracts the game's packed Godot assets (.pck) into extracted_assets/
 scripts/build-icons.sh     # builds the webapp icon set: 64x64 PNGs + icons.json into icons_dist/
+scripts/build-strings.sh   # builds display names (all 14 game languages) for the ALL_CAPS ids into strings_dist/
 ```
 
 - **`build.sh`** — runs the MSBuild `Build` target. Compiles to `bin/Debug/`; nothing leaves the repo. Pass `-c Release` (or any `dotnet build` args) to override.
@@ -174,7 +175,31 @@ icons_dist/
 }
 ```
 
-The **KEY is the string the webapp looks an icon up by**. For `potions`/`relics`/`powers`/`cards`/`orbs` it's the uppercased asset filename, which is exactly the id emitted in telemetry (`potion_use.potion`, `relic_trigger.relic`, `power_applied.power`, `card_play.card`, `orb_channeled.orb`, and the `reward_taken.item` / `shop_*` fields). `intents` are keyed by `IntentType` (`monster_action.intents[]`), `rooms` by `RoomType` (`room_entered.room_type`), and `ui` holds menu chrome (the run-history arrows, buttons, checkboxes, cursors, scrollbars) named by function with no telemetry mapping.
+The **KEY is the string the webapp looks an icon up by**. For `potions`/`relics`/`powers`/`cards`/`orbs` it's the uppercased asset filename, which is exactly the id emitted in telemetry (`potion_use.potion`, `relic_trigger.relic`, `power_applied.power`, `card_play.card`, `orb_channeled.orb`, and the `reward_taken.item` / `shop_*` fields). `intents` are keyed by `IntentType` (`monster_action.intents[]`), `rooms` by `RoomType` (`room_entered.room_type`), `resources` holds inline game glyphs (`star_icon` = Regent's stars, per-character `*_energy_icon`, gold/card/potion/chest), and `ui` holds menu chrome (the run-history arrows, buttons, checkboxes, cursors, scrollbars) named by function with no telemetry mapping.
+
+**`build-strings.sh`** is the sibling display-name pipeline. The telemetry stream emits ALL_CAPS ids (`STRIKE_IRONCLAD`, `BURNING_BLOOD`, `SILENT`); this renders them from the game's **own localization** (`res://localization/<code>/*.json`), so the names stay correct across game versions instead of being hand-maintained. It emits **every language the game ships** — currently 14 (`eng deu esp fra ita jpn kor pol ptb rus spa tha tur zhs`). Pure stdlib (no venv); needs the same `STS2_DIR`/`STS2_PCK` + `GDRE_TOOLS_PATH`.
+
+```bash
+scripts/build-strings.sh            # all locales -> strings_dist/<code>.json + index.json
+scripts/build-strings.sh eng deu    # limit to specific locale codes
+```
+
+Each `strings_dist/<code>.json` mirrors `icons.json`'s shape — a per-category `KEY → "Display Name"` map keyed by the same telemetry strings — and `index.json` lists the locales with best-effort BCP-47 tags:
+
+```json
+{
+  "locale": "eng",
+  "bcp47": "en-US",
+  "categories": {
+    "powers":     { "telemetry_fields": ["power_applied.power", "..."],
+                    "names": { "VULNERABLE_POWER": "Vulnerable", "...": "..." } },
+    "characters": { "telemetry_fields": ["run_start.character", "..."],
+                    "names": { "SILENT": "Silent", "REGENT": "Regent", "...": "..." } }
+  }
+}
+```
+
+Categories: `characters` (English-only "The " strip, so `SILENT` → "Silent" in `eng` but German keeps "Die Stille"), `cards`, `relics`, `potions`, `powers`, `orbs`, `events`, `monsters`, `rest_site`, `intents` (the game's *flavor* titles — `Attack` → "Aggressive", `Buff` → "Empower"), and `rooms` (literal English enum labels). Files are named by the game's own locale code (the `esp`/`spa` Spanish split can't be safely reduced to BCP-47, so the code stays canonical). Partial translations (e.g. Thai) simply yield fewer entries. `strings_dist/` is gitignored.
 
 ## Tools built
 

@@ -11,3 +11,4 @@ extracted_assets/
 recovered_project/
 icons_dist/
 .venv-icons/
+strings_dist/
