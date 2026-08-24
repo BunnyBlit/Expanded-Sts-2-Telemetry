@@ -121,6 +121,7 @@ scripts/package.sh    # 3. Fresh Release build, then zip a release artifact to d
 scripts/fetch-log.sh  # copies the game log to logs/godot.log for inspection
 scripts/decompile.sh  # decompiles the local sts2.dll into decompiled/ for code reference
 scripts/extract-assets.sh  # extracts the game's packed Godot assets (.pck) into extracted_assets/
+scripts/build-icons.sh     # builds the webapp icon set: 64x64 PNGs + icons.json into icons_dist/
 ```
 
 - **`build.sh`** — runs the MSBuild `Build` target. Compiles to `bin/Debug/`; nothing leaves the repo. Pass `-c Release` (or any `dotnet build` args) to override.
@@ -143,6 +144,37 @@ scripts/extract-assets.sh --clean --include=...        # wipe the output dir fir
 Default mode dumps raw files to `extracted_assets/`. `--recover` performs a full project recovery into `recovered_project/` — additionally decompiling GDScript (`.gdc` → `.gd`) and converting binary resources (`.scn`/`.res` → `.tscn`/`.tres`). Any extra arguments pass straight through to GDRE (e.g. `--include=`, `--exclude=`, `--scripts-only`). Both output dirs are gitignored.
 
 The script finds the `.pck` next to `STS2_DIR` (override with the `STS2_PCK` env var) and locates the GDRE binary via `GDRE_TOOLS_PATH` (point it at the binary or the `.app` bundle) → your `PATH` → `/Applications`. **GDRE Tools is not bundled** — download a release from https://github.com/GDRETools/gdsdecomp/releases, or let the modding MCP fetch it with `python -m sts2mcp.setup`, then set `GDRE_TOOLS_PATH`.
+
+**`build-icons.sh`** is a reproducible, one-command icon pipeline for the telemetry webapp. It extracts the game's icon assets, normalizes each to a **64×64 PNG**, and writes them plus a JSON atlas into the gitignored `icons_dist/` (copy that into the webapp's `static/`). Re-run it after a game update to refresh the set — it reads the live pck each time. It needs the same `STS2_DIR`/`STS2_PCK` + `GDRE_TOOLS_PATH` as `extract-assets.sh`, plus `python3` (a local `.venv-icons/` with Pillow is provisioned automatically).
+
+```bash
+scripts/build-icons.sh --clean
+```
+
+Output layout:
+
+```
+icons_dist/
+  potions/BLOCK_POTION.png      relics/BURNING_BLOOD.png    powers/VULNERABLE_POWER.png
+  cards/STRIKE_IRONCLAD.png     orbs/LIGHTNING_ORB.png      intents/Buff.png
+  rooms/Monster.png             ui/back_button.png          icons.json
+```
+
+`icons.json` is a per-category atlas mapping each **KEY → icon file**, alongside the telemetry fields that KEY appears in:
+
+```json
+{
+  "icon_size": 64,
+  "categories": {
+    "potions": {
+      "telemetry_fields": ["potion_use.potion", "reward_taken.item (reward_type=potion)", "..."],
+      "icons": { "BLOCK_POTION": "potions/BLOCK_POTION.png", "...": "..." }
+    }
+  }
+}
+```
+
+The **KEY is the string the webapp looks an icon up by**. For `potions`/`relics`/`powers`/`cards`/`orbs` it's the uppercased asset filename, which is exactly the id emitted in telemetry (`potion_use.potion`, `relic_trigger.relic`, `power_applied.power`, `card_play.card`, `orb_channeled.orb`, and the `reward_taken.item` / `shop_*` fields). `intents` are keyed by `IntentType` (`monster_action.intents[]`), `rooms` by `RoomType` (`room_entered.room_type`), and `ui` holds menu chrome (the run-history arrows, buttons, checkboxes, cursors, scrollbars) named by function with no telemetry mapping.
 
 ## Tools built
 

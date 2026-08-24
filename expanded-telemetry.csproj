@@ -7,6 +7,10 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Keep generated/output dirs out of the SDK's default **/*.cs (and other) globs.
+         decompile.sh writes thousands of game .cs files into decompiled/, and the asset
+         scripts populate recovered_project/ etc. — all gitignored and must never be compiled. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);decompiled/**;recovered_project/**;extracted_assets/**;dist/**</DefaultItemExcludes>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppOutputBase>$(MSBuildProjectDirectory)\</AppOutputBase>
     <!-- Set STS2_DIR env var to the folder containing sts2.dll (see README). MSBuild reads it directly as $(STS2_DIR). -->
