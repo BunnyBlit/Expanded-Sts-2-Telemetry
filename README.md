@@ -165,6 +165,8 @@ icons_dist/
 
 ```json
 {
+  "game_version": "v0.107.1",
+  "game_commit": "59260271",
   "icon_size": 64,
   "categories": {
     "potions": {
@@ -174,6 +176,8 @@ icons_dist/
   }
 }
 ```
+
+Every manifest (`icons.json`, each `strings_dist/<code>.json`, and `index.json`) is stamped with `game_version`/`game_commit`, read from the game's `release_info.json` — the same source the mod uses for `run_start.game_version` — so a manifest always says which game build it was generated from.
 
 The **KEY is the string the webapp looks an icon up by**. For `potions`/`relics`/`powers`/`cards`/`orbs` it's the uppercased asset filename, which is exactly the id emitted in telemetry (`potion_use.potion`, `relic_trigger.relic`, `power_applied.power`, `card_play.card`, `orb_channeled.orb`, and the `reward_taken.item` / `shop_*` fields). `intents` are keyed by `IntentType` (`monster_action.intents[]`), `rooms` by `RoomType` (`room_entered.room_type`), `resources` holds inline game glyphs (`star_icon` = Regent's stars, per-character `*_energy_icon`, gold/card/potion/chest), and `ui` holds menu chrome (the run-history arrows, buttons, checkboxes, cursors, scrollbars) named by function with no telemetry mapping.
 

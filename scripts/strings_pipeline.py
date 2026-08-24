@@ -136,6 +136,25 @@ def find_gdre() -> str:
              "https://github.com/GDRETools/gdsdecomp/releases")
 
 
+def find_release_info(pck: str) -> dict:
+    """Read the game's release_info.json (version/commit/date) — the same source the mod's
+    ReleaseInfoManager uses for run_start.game_version. It sits next to the pck (macOS
+    Contents/Resources), with a few STS2_DIR-relative fallbacks for Win/Linux layouts."""
+    candidates = [os.path.join(os.path.dirname(pck), "release_info.json")]
+    sts2 = os.environ.get("STS2_DIR")
+    if sts2:
+        candidates += [os.path.join(sts2, "release_info.json"),
+                       os.path.join(sts2, "..", "release_info.json"),
+                       os.path.join(sts2, "..", "..", "release_info.json")]
+    for c in candidates:
+        if os.path.isfile(c):
+            try:
+                return json.loads(Path(c).read_text())
+            except Exception:
+                pass
+    return {}
+
+
 def discover_locales(gdre: str, pck: str) -> list[str]:
     """List the localization/<code>/ folders the game ships (so new locales are picked up)."""
     out = subprocess.run([gdre, "--headless", f"--list-files={pck}"],
@@ -221,7 +240,7 @@ def extract_category(s: dict, loc: dict, locale: str) -> dict[str, str]:
     return {}
 
 
-def build_locale(scratch: Path, locale: str) -> tuple[dict, int]:
+def build_locale(scratch: Path, locale: str, release: dict) -> tuple[dict, int]:
     """Extract every category for one locale from its already-recovered files."""
     def load(fname: str) -> dict:
         p = scratch / "localization" / locale / fname
@@ -246,6 +265,8 @@ def build_locale(scratch: Path, locale: str) -> tuple[dict, int]:
         total += len(names)
 
     doc = {
+        "game_version": release.get("version", "unknown"),
+        "game_commit": release.get("commit"),
         "locale": locale,
         "bcp47": BCP47.get(locale, locale),
         "note": "KEY is the exact telemetry id string; value is the display name from the game's "
@@ -260,8 +281,10 @@ def build_locale(scratch: Path, locale: str) -> tuple[dict, int]:
 def main() -> None:
     pck = find_pck()
     gdre = find_gdre()
+    release = find_release_info(pck)
     print(f"GDRE : {gdre}")
     print(f"PCK  : {pck}")
+    print(f"game : {release.get('version', 'unknown')}")
 
     only = [a for a in sys.argv[1:] if not a.startswith("-")]  # optional locale filter, e.g. `eng deu`
     locales = discover_locales(gdre, pck)
@@ -284,14 +307,17 @@ def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     index = []
     for locale in locales:
-        doc, total = build_locale(scratch, locale)
+        doc, total = build_locale(scratch, locale, release)
         (OUTPUT_DIR / f"{locale}.json").write_text(
             json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
         index.append({"locale": locale, "bcp47": doc["bcp47"], "file": f"{locale}.json", "count": total})
         print(f"  {locale:5} {doc['bcp47']:7} {total} names")
 
-    (OUTPUT_DIR / "index.json").write_text(
-        json.dumps({"locales": index}, indent=2, ensure_ascii=False) + "\n")
+    (OUTPUT_DIR / "index.json").write_text(json.dumps({
+        "game_version": release.get("version", "unknown"),
+        "game_commit": release.get("commit"),
+        "locales": index,
+    }, indent=2, ensure_ascii=False) + "\n")
 
     shutil.rmtree(scratch, ignore_errors=True)
     print(f"\nDone. {len(locales)} locales -> {OUTPUT_DIR} (see index.json)")

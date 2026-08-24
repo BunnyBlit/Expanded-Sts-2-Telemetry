@@ -184,6 +184,25 @@ def find_gdre() -> str:
              "https://github.com/GDRETools/gdsdecomp/releases")
 
 
+def find_release_info(pck: str) -> dict:
+    """Read the game's release_info.json (version/commit/date) — the same source the mod's
+    ReleaseInfoManager uses for run_start.game_version. It sits next to the pck (macOS
+    Contents/Resources), with a few STS2_DIR-relative fallbacks for Win/Linux layouts."""
+    candidates = [os.path.join(os.path.dirname(pck), "release_info.json")]
+    sts2 = os.environ.get("STS2_DIR")
+    if sts2:
+        candidates += [os.path.join(sts2, "release_info.json"),
+                       os.path.join(sts2, "..", "release_info.json"),
+                       os.path.join(sts2, "..", "..", "release_info.json")]
+    for c in candidates:
+        if os.path.isfile(c):
+            try:
+                return json.loads(Path(c).read_text())
+            except Exception:
+                pass
+    return {}
+
+
 def gdre_list_files(gdre: str, pck: str) -> list[str]:
     out = subprocess.run([gdre, "--headless", f"--list-files={pck}"],
                          capture_output=True, text=True, timeout=300)
@@ -243,8 +262,11 @@ def main() -> None:
     clean = "--clean" in sys.argv
     pck = find_pck()
     gdre = find_gdre()
+    release = find_release_info(pck)
+    game_version = release.get("version", "unknown")
     print(f"GDRE : {gdre}")
     print(f"PCK  : {pck}")
+    print(f"game : {game_version}")
 
     all_files = gdre_list_files(gdre, pck)
     ctex_index = build_ctex_index(all_files)
@@ -387,6 +409,8 @@ def main() -> None:
             fields_by_cat[s["category"]] = s["fields"]
 
     atlas = {
+        "game_version": game_version,
+        "game_commit": release.get("commit"),
         "icon_size": ICON_SIZE,
         "key_rule": "For gameplay categories, KEY is the uppercased asset filename and equals the "
                     "telemetry id string. intents/rooms use the IntentType/RoomType enum name. "
